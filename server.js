@@ -9,6 +9,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const internshipRoutes = require("./routes/internshipRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const purchaseRoutes = require("./routes/purchaseRoutes");
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan("dev"));
 app.use("/api/payments", paymentRoutes);
+app.use("/api/purchases", purchaseRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
