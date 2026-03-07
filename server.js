@@ -12,6 +12,8 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const quizRoutes = require("./routes/quizRoutes");
+const path = require("path");
+const certificateRoutes = require("./routes/certificateRoutes");
 
 const app = express();
 
@@ -32,6 +34,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/quiz", quizRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -46,6 +49,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/internships", internshipRoutes);
+app.use("/api/certificates", certificateRoutes);
 
 const PORT = process.env.PORT || 5000;
 
