@@ -3,6 +3,7 @@ const fs = require("fs");
 const Certificate = require("../models/Certificate");
 const Internship = require("../models/Internship");
 const User = require("../models/User");
+const Purchase = require("../models/Purchase");
 const generateCertificatePdf = require("../utils/generateCertificatePdf");
 
 const generateCertificateId = () => {
@@ -34,6 +35,19 @@ exports.generateCertificate = async (req, res) => {
       });
     }
 
+    const purchased = await Purchase.findOne({
+      userId: userId,
+      internshipId: internshipId,
+      paymentStatus: "paid",
+    });
+
+    if (!purchased) {
+      return res.status(403).json({
+        success: false,
+        message: "Please purchase this internship before generating certificate",
+      });
+    }
+
     const existingCertificate = await Certificate.findOne({
       user: userId,
       internship: internshipId,
@@ -44,16 +58,19 @@ exports.generateCertificate = async (req, res) => {
         success: true,
         message: "Certificate already generated",
         certificate: existingCertificate,
+        downloadUrl: `/api/certificates/${existingCertificate.certificateId}/download`,
       });
     }
 
     const certificateId = generateCertificateId();
     const issueDate = new Date();
 
+    const finalDuration = duration || purchased.durationLabel || "Not specified";
+
     const pdfResult = await generateCertificatePdf({
       studentName: user.name,
       internshipTitle: internship.title,
-      duration: duration || "Not specified",
+      duration: finalDuration,
       certificateId,
       issueDate,
     });
@@ -66,7 +83,7 @@ exports.generateCertificate = async (req, res) => {
       certificateId,
       studentName: user.name,
       internshipTitle: internship.title,
-      duration: duration || "Not specified",
+      duration: finalDuration,
       issueDate,
       pdfUrl,
     });
@@ -75,6 +92,7 @@ exports.generateCertificate = async (req, res) => {
       success: true,
       message: "Certificate generated successfully",
       certificate,
+      downloadUrl: `/api/certificates/${certificate.certificateId}/download`,
     });
   } catch (error) {
     console.error("Generate Certificate Error:", error);
