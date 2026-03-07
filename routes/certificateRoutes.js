@@ -1,16 +1,15 @@
 const express = require("express");
 const router = express.Router();
-
 const {
   generateCertificate,
   downloadCertificate,
   verifyCertificate,
 } = require("../controllers/certificateController");
 
-const authMiddleware = require("../middleware/authMiddleware");
+const { protect } = require("../middleware/authMiddleware");
 
 // Generate certificate
-router.post("/generate/:internshipId", authMiddleware, generateCertificate);
+router.post("/generate/:internshipId", protect, generateCertificate);
 
 // Verify certificate
 router.get("/verify/:certificateId", verifyCertificate);
