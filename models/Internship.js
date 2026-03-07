@@ -30,6 +30,33 @@ const moduleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const quizQuestionSchema = new mongoose.Schema(
+  {
+    question: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    options: {
+      type: [String],
+      required: true,
+      validate: {
+        validator: function (arr) {
+          return Array.isArray(arr) && arr.length === 4;
+        },
+        message: "Exactly 4 options required",
+      },
+    },
+    correctAnswer: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 3,
+    },
+  },
+  { _id: false }
+);
+
 const internshipSchema = new mongoose.Schema(
   {
     title: {
@@ -57,6 +84,7 @@ const internshipSchema = new mongoose.Schema(
     },
     durations: [durationSchema],
     modules: [moduleSchema],
+    quiz: [quizQuestionSchema],
     isActive: {
       type: Boolean,
       default: true,
@@ -65,4 +93,5 @@ const internshipSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Internship", internshipSchema);
+module.exports =
+  mongoose.models.Internship || mongoose.model("Internship", internshipSchema);

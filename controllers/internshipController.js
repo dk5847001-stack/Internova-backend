@@ -81,3 +81,37 @@ exports.createInternship = async (req, res) => {
     });
   }
 };
+
+exports.updateInternship = async (req, res) => {
+  try {
+    const internship = await Internship.findById(req.params.id);
+
+    if (!internship) {
+      return res.status(404).json({
+        success: false,
+        message: "Internship not found",
+      });
+    }
+
+    const updatedInternship = await Internship.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Internship updated successfully",
+      internship: updatedInternship,
+    });
+  } catch (error) {
+    console.error("UPDATE INTERNSHIP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update internship",
+    });
+  }
+};

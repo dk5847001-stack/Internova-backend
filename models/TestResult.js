@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const progressSchema = new mongoose.Schema(
+const testResultSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -12,23 +12,23 @@ const progressSchema = new mongoose.Schema(
       ref: "Internship",
       required: true,
     },
-    completedModules: {
+    answers: {
       type: [Number],
       default: [],
     },
-    progressPercent: {
+    score: {
       type: Number,
       default: 0,
     },
-    certificateEligible: {
-      type: Boolean,
-      default: false,
+    totalQuestions: {
+      type: Number,
+      default: 0,
     },
-    testPassed: {
-      type: Boolean,
-      default: false,
+    percentage: {
+      type: Number,
+      default: 0,
     },
-    finalEligible: {
+    passed: {
       type: Boolean,
       default: false,
     },
@@ -36,7 +36,6 @@ const progressSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-progressSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
+testResultSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
 
-module.exports =
-  mongoose.models.Progress || mongoose.model("Progress", progressSchema);
+module.exports = mongoose.model("TestResult", testResultSchema);
