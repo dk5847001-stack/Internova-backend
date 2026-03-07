@@ -47,59 +47,96 @@ const generateCertificatePdf = ({
       const pageWidth = doc.page.width;
       const pageHeight = doc.page.height;
 
-      // Background outer border
+      const logoPath = path.join(__dirname, "../assets/logo.png");
+      const signaturePath = path.join(__dirname, "../assets/signature.png");
+      const stampPath = path.join(__dirname, "../assets/stamp.png");
+
+      const verifyUrl = `http://localhost:5000/api/certificates/verify/${certificateId}`;
+
+      // Background
+      doc.rect(0, 0, pageWidth, pageHeight).fill("#fcfcf9");
+
+      // Outer border
       doc
-        .lineWidth(6)
+        .lineWidth(7)
         .strokeColor("#0f172a")
-        .rect(20, 20, pageWidth - 40, pageHeight - 40)
+        .rect(18, 18, pageWidth - 36, pageHeight - 36)
         .stroke();
 
-      // Inner premium border
+      // Inner gold border
       doc
-        .lineWidth(2)
-        .strokeColor("#d4af37")
-        .rect(35, 35, pageWidth - 70, pageHeight - 70)
+        .lineWidth(1.8)
+        .strokeColor("#c8a44d")
+        .rect(34, 34, pageWidth - 68, pageHeight - 68)
         .stroke();
 
-      // Decorative top line
+      // Decorative inner line
       doc
-        .moveTo(120, 85)
-        .lineTo(pageWidth - 120, 85)
-        .lineWidth(1.5)
-        .strokeColor("#d4af37")
+        .lineWidth(0.8)
+        .strokeColor("#e2c46c")
+        .rect(42, 42, pageWidth - 84, pageHeight - 84)
         .stroke();
 
-      // Brand
+      // Logo
+      if (fs.existsSync(logoPath)) {
+        doc.image(logoPath, 70, 52, {
+          fit: [70, 70],
+          align: "center",
+          valign: "center",
+        });
+      }
+
+      // Brand name
       doc
         .font("Helvetica-Bold")
-        .fontSize(18)
+        .fontSize(20)
         .fillColor("#0f172a")
-        .text("INTERNOVA", 0, 55, { align: "center" });
+        .text("INTERNOVA", 0, 56, {
+          align: "center",
+        });
+
+      doc
+        .font("Helvetica")
+        .fontSize(10)
+        .fillColor("#64748b")
+        .text("Professional Internship Certification", 0, 82, {
+          align: "center",
+        });
+
+      // Top decorative line
+      doc
+        .moveTo(150, 108)
+        .lineTo(pageWidth - 150, 108)
+        .lineWidth(1.2)
+        .strokeColor("#c8a44d")
+        .stroke();
 
       // Main title
       doc
         .font("Helvetica-Bold")
         .fontSize(30)
         .fillColor("#b8860b")
-        .text("CERTIFICATE OF INTERNSHIP", 0, 105, { align: "center" });
+        .text("CERTIFICATE OF INTERNSHIP", 0, 128, {
+          align: "center",
+        });
 
       // Subtitle
       doc
         .font("Helvetica")
         .fontSize(15)
         .fillColor("#475569")
-        .text("This certificate is proudly presented to", 0, 160, {
+        .text("This certificate is proudly presented to", 0, 180, {
           align: "center",
         });
 
-      // Student Name
+      // Name
       doc
         .font("Helvetica-Bold")
-        .fontSize(28)
+        .fontSize(29)
         .fillColor("#111827")
-        .text(safeStudentName, 100, 205, {
-          align: "center",
+        .text(safeStudentName, 100, 220, {
           width: pageWidth - 200,
+          align: "center",
           underline: true,
         });
 
@@ -111,55 +148,76 @@ const generateCertificatePdf = ({
         .text(
           `for successfully completing the internship program "${safeInternshipTitle}"`,
           110,
-          265,
+          280,
           {
-            align: "center",
             width: pageWidth - 220,
+            align: "center",
           }
         );
 
       doc
-        .moveDown(0.7)
         .fontSize(15)
-        .text(`Duration: ${safeDuration}`, {
+        .fillColor("#334155")
+        .text(`Duration: ${safeDuration}`, 0, 338, {
           align: "center",
         });
 
       doc
-        .moveDown(0.3)
         .fontSize(14)
         .fillColor("#475569")
-        .text(`Issued on: ${safeIssueDate}`, {
+        .text(`Issued on: ${safeIssueDate}`, 0, 364, {
           align: "center",
         });
 
-      // Certificate ID box
+      // Certificate ID premium box
       doc
-        .roundedRect(pageWidth / 2 - 140, 375, 280, 34, 8)
+        .roundedRect(pageWidth / 2 - 165, 398, 330, 36, 10)
         .lineWidth(1.2)
-        .strokeColor("#d4af37")
+        .strokeColor("#c8a44d")
         .stroke();
 
       doc
         .font("Helvetica-Bold")
         .fontSize(12)
         .fillColor("#0f172a")
-        .text(`Certificate ID: ${certificateId}`, pageWidth / 2 - 140, 386, {
-          width: 280,
+        .text(`Certificate ID: ${certificateId}`, pageWidth / 2 - 165, 410, {
+          width: 330,
           align: "center",
         });
 
-      // Signature lines
-      doc
-        .moveTo(120, 470)
-        .lineTo(250, 470)
-        .lineWidth(1)
-        .strokeColor("#111827")
-        .stroke();
+      // Stamp / seal
+      if (fs.existsSync(stampPath)) {
+        doc.image(stampPath, pageWidth - 210, 330, {
+          fit: [95, 95],
+          opacity: 0.9,
+        });
+      } else {
+        doc
+          .circle(pageWidth - 150, 385, 42)
+          .lineWidth(2)
+          .strokeColor("#c8a44d")
+          .stroke();
+
+        doc
+          .font("Helvetica-Bold")
+          .fontSize(10)
+          .fillColor("#b8860b")
+          .text("VERIFIED", pageWidth - 178, 381, {
+            width: 56,
+            align: "center",
+          });
+      }
+
+      // Left signature
+      if (fs.existsSync(signaturePath)) {
+        doc.image(signaturePath, 100, 455, {
+          fit: [90, 40],
+        });
+      }
 
       doc
-        .moveTo(pageWidth - 250, 470)
-        .lineTo(pageWidth - 120, 470)
+        .moveTo(90, 500)
+        .lineTo(230, 500)
         .lineWidth(1)
         .strokeColor("#111827")
         .stroke();
@@ -168,16 +226,35 @@ const generateCertificatePdf = ({
         .font("Helvetica")
         .fontSize(12)
         .fillColor("#111827")
-        .text("Authorized Signature", 105, 478);
+        .text("Authorized Signature", 88, 507);
+
+      // Right signature line
+      doc
+        .moveTo(pageWidth - 230, 500)
+        .lineTo(pageWidth - 90, 500)
+        .lineWidth(1)
+        .strokeColor("#111827")
+        .stroke();
 
       doc
-        .text("Program Director", pageWidth - 245, 478);
+        .font("Helvetica")
+        .fontSize(12)
+        .fillColor("#111827")
+        .text("Program Director", pageWidth - 215, 507);
 
-      // Footer
+      // Footer verification text
       doc
+        .font("Helvetica")
         .fontSize(10)
         .fillColor("#64748b")
-        .text("This certificate is digitally generated and valid upon verification.", 0, 535, {
+        .text("This certificate is digitally generated and valid upon verification.", 0, 545, {
+          align: "center",
+        });
+
+      doc
+        .fontSize(9)
+        .fillColor("#94a3b8")
+        .text(`Verify: ${verifyUrl}`, 0, 560, {
           align: "center",
         });
 
