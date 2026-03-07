@@ -2,6 +2,8 @@ const Purchase = require("../models/Purchase");
 const User = require("../models/User");
 const Internship = require("../models/Internship");
 const PDFDocument = require("pdfkit");
+const path = require("path");
+const fs = require("fs");
 
 exports.getMyPurchases = async (req, res) => {
   try {
@@ -48,7 +50,12 @@ exports.downloadOfferLetter = async (req, res) => {
 
     const doc = new PDFDocument({
       size: "A4",
-      margin: 0,
+      margins: {
+        top: 50,
+        bottom: 50,
+        left: 50,
+        right: 50,
+      },
     });
 
     const safeName = (user.name || "candidate").replace(/[^a-z0-9]/gi, "_");
@@ -59,11 +66,35 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.pipe(res);
 
+    const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
+    const signaturePath = path.join(__dirname, "../uploads/branding/signature.png");
+    const sealPath = path.join(__dirname, "../uploads/branding/seal.png");
+
+    const hasLogo = fs.existsSync(logoPath);
+    const hasSignature = fs.existsSync(signaturePath);
+    const hasSeal = fs.existsSync(sealPath);
+
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
-    const left = 55;
-    const right = pageWidth - 55;
-    const width = right - left;
+    const left = doc.page.margins.left;
+    const right = pageWidth - doc.page.margins.right;
+    const contentWidth = right - left;
+
+    const colors = {
+      navy: "#0F172A",
+      blue: "#2563EB",
+      text: "#1F2937",
+      soft: "#64748B",
+      border: "#D9E2EC",
+      light: "#F8FAFC",
+      lightBlue: "#EFF6FF",
+      warnBg: "#FFF7ED",
+      warnBorder: "#FED7AA",
+      warnText: "#9A3412",
+      white: "#FFFFFF",
+      green: "#065F46",
+      greenBg: "#D1FAE5",
+    };
 
     const formatDate = (date) =>
       new Date(date).toLocaleDateString("en-IN", {
@@ -72,350 +103,406 @@ exports.downloadOfferLetter = async (req, res) => {
         year: "numeric",
       });
 
-    const primary = "#0F172A";
-    const secondary = "#1E293B";
-    const accent = "#2563EB";
-    const textDark = "#111827";
-    const textSoft = "#475569";
-    const lightBg = "#F8FAFC";
-    const border = "#DCE3EA";
-    const white = "#FFFFFF";
-
-    const referenceId = `INVOFF-${purchase._id.toString().slice(-8).toUpperCase()}`;
     const issueDate = formatDate(new Date());
+    const referenceId = `INVOFF-${purchase._id.toString().slice(-8).toUpperCase()}`;
+
+    const ensureSpace = (needed = 120) => {
+      if (doc.y + needed > pageHeight - doc.page.margins.bottom - 40) {
+        doc.addPage();
+      }
+    };
+
+    const drawDivider = () => {
+      doc
+        .strokeColor(colors.border)
+        .lineWidth(1)
+        .moveTo(left, doc.y)
+        .lineTo(right, doc.y)
+        .stroke();
+      doc.moveDown(1);
+    };
+
+    const drawInfoRow = (label1, value1, label2, value2, startY) => {
+      const col1X = left + 18;
+      const col2X = left + 300;
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(10.5)
+        .fillColor(colors.text)
+        .text(label1, col1X, startY)
+        .text(label2, col2X, startY);
+
+      doc
+        .font("Helvetica")
+        .fontSize(10.5)
+        .fillColor(colors.soft)
+        .text(value1, col1X, startY + 14, { width: 220 })
+        .text(value2, col2X, startY + 14, { width: 180 });
+    };
 
     // Background
-    doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
+    doc.rect(0, 0, pageWidth, pageHeight).fill(colors.white);
 
     // Outer border
     doc
-      .lineWidth(1.2)
-      .strokeColor("#D9E1EA")
-      .roundedRect(20, 20, pageWidth - 40, pageHeight - 40, 18)
+      .lineWidth(1)
+      .strokeColor("#E5E7EB")
+      .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 16)
       .stroke();
 
-    // Top header
+    // Header
     doc
-      .roundedRect(35, 35, pageWidth - 70, 105, 18)
-      .fillAndStroke(primary, primary);
+      .roundedRect(left, doc.y, contentWidth, 95, 16)
+      .fillAndStroke(colors.navy, colors.navy);
 
-    // Brand badge
-    doc
-      .roundedRect(left, 52, 118, 28, 14)
-      .fillAndStroke(accent, accent);
+    if (hasLogo) {
+      try {
+        doc.image(logoPath, left + 18, doc.y + 18, {
+          fit: [52, 52],
+          align: "left",
+          valign: "center",
+        });
+      } catch (e) {}
+    }
 
     doc
-      .fillColor(white)
+      .fillColor(colors.white)
       .font("Helvetica-Bold")
-      .fontSize(11)
-      .text("INTERNSHIP PORTAL", left + 13, 61);
-
-    // Title
-    doc
-      .fillColor(white)
-      .font("Helvetica-Bold")
-      .fontSize(25)
-      .text("INTERNSHIP OFFER LETTER", 0, 68, {
+      .fontSize(24)
+      .text("INTERNSHIP OFFER LETTER", left, doc.y + 18, {
+        width: contentWidth,
         align: "center",
       });
 
     doc
-      .fillColor("#CBD5E1")
       .font("Helvetica")
       .fontSize(13)
-      .text("Internova", 0, 102, { align: "center" });
+      .fillColor("#CBD5E1")
+      .text("Internova", left, doc.y + 50, {
+        width: contentWidth,
+        align: "center",
+      });
 
-    // Right meta box
     doc
-      .roundedRect(pageWidth - 205, 50, 130, 48, 10)
-      .fillAndStroke(secondary, secondary);
+      .roundedRect(right - 150, doc.y + 18, 132, 40, 10)
+      .fillAndStroke("#1E293B", "#1E293B");
 
     doc
-      .fillColor("#E2E8F0")
       .font("Helvetica")
-      .fontSize(9)
-      .text("Issue Date", pageWidth - 192, 58)
-      .text("Reference ID", pageWidth - 192, 77);
+      .fontSize(8.5)
+      .fillColor("#CBD5E1")
+      .text("Issue Date", right - 138, doc.y + 25)
+      .text("Reference ID", right - 138, doc.y + 39);
 
     doc
-      .fillColor(white)
       .font("Helvetica-Bold")
-      .fontSize(9)
-      .text(issueDate, pageWidth - 120, 58, { width: 38, align: "right" })
-      .text(referenceId, pageWidth - 120, 77, { width: 38, align: "right" });
+      .fontSize(8.5)
+      .fillColor(colors.white)
+      .text(issueDate, right - 78, doc.y + 25, { width: 48, align: "right" })
+      .text(referenceId, right - 92, doc.y + 39, { width: 62, align: "right" });
 
-    // Watermark style brand text
+    doc.y += 115;
+
+    // Watermark
     doc.save();
     doc.rotate(-35, { origin: [300, 420] });
     doc
       .fillColor("#F1F5F9")
       .font("Helvetica-Bold")
-      .fontSize(52)
-      .text("INTERNOVA", 120, 380, {
-        opacity: 0.08,
-      });
+      .fontSize(50)
+      .text("INTERNOVA", 120, 395);
     doc.restore();
-
-    let y = 170;
 
     // Recipient block
     doc
-      .fillColor(textSoft)
       .font("Helvetica")
       .fontSize(11)
-      .text("To,", left, y);
+      .fillColor(colors.soft)
+      .text("To,", left, doc.y);
 
-    y += 18;
+    doc.moveDown(0.4);
 
     doc
-      .fillColor(textDark)
       .font("Helvetica-Bold")
       .fontSize(12)
-      .text(user.name, left, y);
-
-    y += 18;
+      .fillColor(colors.text)
+      .text(user.name || "Candidate");
 
     doc
-      .fillColor(textSoft)
       .font("Helvetica")
-      .fontSize(11)
-      .text(user.email, left, y);
+      .fontSize(10.8)
+      .fillColor(colors.soft)
+      .text(user.email || "N/A");
 
-    // Date on right
+    doc.moveDown(0.8);
+
     doc
-      .fillColor(textSoft)
       .font("Helvetica")
-      .fontSize(11)
-      .text(`Date: ${issueDate}`, pageWidth - 200, 188, {
-        width: 145,
+      .fontSize(10.5)
+      .fillColor(colors.soft)
+      .text(`Date: ${issueDate}`, {
         align: "right",
       });
 
-    y += 34;
+    drawDivider();
 
-    // Subject line
+    // Subject
     doc
-      .strokeColor(border)
-      .lineWidth(1)
-      .moveTo(left, y)
-      .lineTo(right, y)
-      .stroke();
-
-    y += 18;
-
-    doc
-      .fillColor(textDark)
       .font("Helvetica-Bold")
       .fontSize(12)
-      .text("Subject: Formal Offer of Internship Enrollment", left, y);
+      .fillColor(colors.text)
+      .text("Subject: Formal Offer of Internship Enrollment");
 
-    y += 34;
+    doc.moveDown(1);
 
-    // Greeting
+    // Body
     doc
-      .fillColor(textDark)
-      .font("Helvetica")
-      .fontSize(11.5)
-      .text(`Dear ${user.name},`, left, y);
-
-    y += 24;
-
-    // Main paragraphs
-    doc
-      .fillColor(textDark)
       .font("Helvetica")
       .fontSize(11.2)
-      .text(
-        `We are pleased to confirm your enrollment in the internship program "${internship.title}" offered by Internova. Based on your successful registration and payment confirmation, you have been provisionally admitted to the internship for a duration of ${purchase.durationLabel}.`,
-        left,
-        y,
-        {
-          width,
-          align: "justify",
-          lineGap: 5,
-        }
-      );
+      .fillColor(colors.text)
+      .text(`Dear ${user.name},`, {
+        lineGap: 4,
+      });
 
-    y = doc.y + 14;
+    doc.moveDown(0.8);
 
     doc.text(
-      `This internship has been designed to provide you with structured learning, guided practical exposure, and domain-based assessment aligned with your selected program. During the tenure of this internship, you will be expected to complete the prescribed modules, maintain the required academic progress, and participate in evaluation activities wherever applicable.`,
-      left,
-      y,
+      `We are pleased to confirm your enrollment in the internship program "${internship.title}" offered by Internova. Based on your successful registration and payment confirmation, you have been provisionally admitted to the internship for a duration of ${purchase.durationLabel}.`,
       {
-        width,
+        width: contentWidth,
         align: "justify",
-        lineGap: 5,
+        lineGap: 4,
       }
     );
 
-    y = doc.y + 14;
+    doc.moveDown(0.8);
 
     doc.text(
-      `Please note that this document serves as your official internship offer letter. The final certificate of completion shall be issued only upon successful satisfaction of the platform requirements, including minimum completion criteria and eligibility standards defined by Internova.`,
-      left,
-      y,
+      `This internship is designed to provide structured learning, guided practical exposure, and domain-focused skill development. During the internship tenure, you will be expected to complete the prescribed modules, maintain the required progress, and participate in assessments wherever applicable.`,
       {
-        width,
+        width: contentWidth,
         align: "justify",
-        lineGap: 5,
+        lineGap: 4,
       }
     );
 
-    y = doc.y + 22;
+    doc.moveDown(0.8);
 
-    // Offer details card
-    doc
-      .roundedRect(left, y, width, 156, 14)
-      .fillAndStroke(lightBg, "#E2E8F0");
+    doc.text(
+      `Please note that this document serves as your official internship offer letter. Final certificate issuance shall remain subject to successful completion of the applicable requirements, including minimum course progress and assessment eligibility as defined by Internova.`,
+      {
+        width: contentWidth,
+        align: "justify",
+        lineGap: 4,
+      }
+    );
+
+    doc.moveDown(1.2);
+
+    // Details card
+    ensureSpace(220);
+
+    const cardY = doc.y;
+    const cardHeight = 170;
 
     doc
-      .roundedRect(left, y, width, 36, 14)
-      .fillAndStroke("#EAF2FF", "#EAF2FF");
+      .roundedRect(left, cardY, contentWidth, cardHeight, 14)
+      .fillAndStroke(colors.light, "#E2E8F0");
 
     doc
-      .fillColor(primary)
+      .roundedRect(left, cardY, contentWidth, 36, 14)
+      .fillAndStroke(colors.lightBlue, colors.lightBlue);
+
+    doc
       .font("Helvetica-Bold")
       .fontSize(13)
-      .text("Internship Enrollment Details", left + 18, y + 12);
+      .fillColor(colors.navy)
+      .text("Internship Enrollment Details", left + 18, cardY + 12);
 
-    let boxY = y + 52;
-
-    doc
-      .fillColor(textDark)
-      .font("Helvetica")
-      .fontSize(10.8)
-      .text(`Candidate Name: ${user.name}`, left + 18, boxY)
-      .text(`Registered Email: ${user.email}`, left + 18, boxY + 21)
-      .text(`Program Name: ${internship.title}`, left + 18, boxY + 42)
-      .text(`Branch / Stream: ${internship.branch}`, left + 18, boxY + 63)
-      .text(`Category: ${internship.category}`, left + 18, boxY + 84);
+    drawInfoRow("Candidate Name", user.name || "N/A", "Duration", purchase.durationLabel || "N/A", cardY + 52);
+    drawInfoRow("Registered Email", user.email || "N/A", "Amount Paid", `INR ${purchase.amount}`, cardY + 84);
+    drawInfoRow("Program Name", internship.title || "N/A", "Status", (purchase.paymentStatus || "paid").toUpperCase(), cardY + 116);
 
     doc
-      .text(`Duration: ${purchase.durationLabel}`, left + 320, boxY)
-      .text(`Amount Paid: INR ${purchase.amount}`, left + 320, boxY + 21)
-      .text(
-        `Payment ID: ${purchase.razorpayPaymentId || "N/A"}`,
-        left + 320,
-        boxY + 42,
-        { width: 165 }
-      )
-      .text(
-        `Order ID: ${purchase.razorpayOrderId}`,
-        left + 320,
-        boxY + 69,
-        { width: 165 }
-      )
-      .text(`Status: ${purchase.paymentStatus.toUpperCase()}`, left + 320, boxY + 108);
-
-    y += 180;
-
-    // Important note box
-    doc
-      .roundedRect(left, y, width, 72, 12)
-      .fillAndStroke("#FFF7ED", "#FED7AA");
-
-    doc
-      .fillColor("#9A3412")
       .font("Helvetica-Bold")
-      .fontSize(11)
-      .text("Important Note", left + 16, y + 12);
+      .fontSize(10.5)
+      .fillColor(colors.text)
+      .text("Branch / Stream", left + 18, cardY + 148)
+      .text("Category", left + 300, cardY + 148);
 
     doc
-      .fillColor("#7C2D12")
       .font("Helvetica")
       .fontSize(10.5)
+      .fillColor(colors.soft)
+      .text(internship.branch || "N/A", left + 18, cardY + 162, { width: 220 })
+      .text(internship.category || "N/A", left + 300, cardY + 162, { width: 180 });
+
+    doc.y = cardY + cardHeight + 18;
+
+    // Payment meta box
+    ensureSpace(100);
+
+    const metaY = doc.y;
+    const metaHeight = 74;
+
+    doc
+      .roundedRect(left, metaY, contentWidth, metaHeight, 12)
+      .fillAndStroke("#FFFFFF", colors.border);
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(10.5)
+      .fillColor(colors.text)
+      .text("Payment Information", left + 16, metaY + 12);
+
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor(colors.soft)
+      .text(`Payment ID: ${purchase.razorpayPaymentId || "N/A"}`, left + 16, metaY + 32, {
+        width: 240,
+      })
+      .text(`Order ID: ${purchase.razorpayOrderId || "N/A"}`, left + 280, metaY + 32, {
+        width: 220,
+      });
+
+    doc.y = metaY + metaHeight + 18;
+
+    // Important note box
+    ensureSpace(110);
+
+    const noteY = doc.y;
+    const noteHeight = 78;
+
+    doc
+      .roundedRect(left, noteY, contentWidth, noteHeight, 12)
+      .fillAndStroke(colors.warnBg, colors.warnBorder);
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(11)
+      .fillColor(colors.warnText)
+      .text("Important Note", left + 16, noteY + 12);
+
+    doc
+      .font("Helvetica")
+      .fontSize(10.3)
+      .fillColor(colors.warnText)
       .text(
-        "This offer letter confirms internship enrollment only. Certificate issuance is subject to successful completion of applicable course progress, assessments, and internal eligibility requirements.",
+        "This offer letter confirms internship enrollment only. Certificate issuance will depend on successful completion of progress requirements, assessments, and internal eligibility conditions defined by Internova.",
         left + 16,
-        y + 30,
+        noteY + 30,
         {
-          width: width - 32,
-          lineGap: 4,
+          width: contentWidth - 32,
           align: "justify",
+          lineGap: 3,
         }
       );
 
-    y += 95;
+    doc.y = noteY + noteHeight + 20;
 
-    // Closing paragraph
+    // Closing
+    ensureSpace(150);
+
     doc
-      .fillColor(textDark)
       .font("Helvetica")
       .fontSize(11.2)
+      .fillColor(colors.text)
       .text(
-        `We are delighted to welcome you to Internova. We wish you a valuable and enriching internship journey ahead.`,
-        left,
-        y,
+        "We are delighted to welcome you to Internova and wish you a valuable, practical, and enriching internship journey ahead.",
         {
-          width,
-          lineGap: 5,
+          width: contentWidth,
           align: "justify",
+          lineGap: 4,
         }
       );
 
-    y = doc.y + 40;
+    doc.moveDown(1.8);
 
-    // Signature section
     doc
-      .fillColor(textDark)
       .font("Helvetica")
       .fontSize(11)
-      .text("Sincerely,", left, y);
+      .fillColor(colors.text)
+      .text("Sincerely,");
 
-    y += 54;
+    doc.moveDown(1.6);
+
+    // Signature section
+    const signStartY = doc.y;
+
+    if (hasSignature) {
+      try {
+        doc.image(signaturePath, left, signStartY - 10, {
+          fit: [140, 45],
+        });
+      } catch (e) {}
+    }
 
     doc
       .strokeColor("#94A3B8")
       .lineWidth(1)
-      .moveTo(left, y)
-      .lineTo(left + 180, y)
+      .moveTo(left, signStartY + 32)
+      .lineTo(left + 180, signStartY + 32)
       .stroke();
 
     doc
-      .fillColor(primary)
       .font("Helvetica-Bold")
-      .fontSize(12)
-      .text("Authorized Signatory", left, y + 8);
+      .fontSize(11.5)
+      .fillColor(colors.navy)
+      .text("Authorized Signatory", left, signStartY + 40);
 
     doc
-      .fillColor(textSoft)
       .font("Helvetica")
-      .fontSize(11)
-      .text("Internova", left, y + 26)
-      .text("Internship Program Management", left, y + 42);
+      .fontSize(10.5)
+      .fillColor(colors.soft)
+      .text("Internova", left, signStartY + 56)
+      .text("Internship Program Management", left, signStartY + 70);
 
-    // Seal-style badge
-    doc
-      .circle(pageWidth - 110, y + 26, 34)
-      .fillAndStroke("#DBEAFE", "#93C5FD");
+    if (hasSeal) {
+      try {
+        doc.image(sealPath, right - 95, signStartY + 5, {
+          fit: [70, 70],
+          align: "right",
+        });
+      } catch (e) {}
+    } else {
+      doc
+        .circle(right - 52, signStartY + 38, 28)
+        .fillAndStroke(colors.greenBg, "#A7F3D0");
 
-    doc
-      .fillColor("#1D4ED8")
-      .font("Helvetica-Bold")
-      .fontSize(10)
-      .text("VERIFIED", pageWidth - 133, y + 18, {
-        width: 46,
-        align: "center",
-      });
+      doc
+        .fillColor(colors.green)
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text("VERIFIED", right - 80, signStartY + 34, {
+          width: 56,
+          align: "center",
+        });
+    }
 
     // Footer
+    const footerY = pageHeight - 60;
+
     doc
-      .strokeColor(border)
+      .strokeColor(colors.border)
       .lineWidth(1)
-      .moveTo(45, pageHeight - 75)
-      .lineTo(pageWidth - 45, pageHeight - 75)
+      .moveTo(left, footerY - 10)
+      .lineTo(right, footerY - 10)
       .stroke();
 
     doc
-      .fillColor("#64748B")
       .font("Helvetica")
-      .fontSize(9.5)
+      .fontSize(9.3)
+      .fillColor(colors.soft)
       .text(
         "This is a system-generated document issued by Internova and does not require a physical signature.",
-        0,
-        pageHeight - 60,
-        { align: "center" }
+        left,
+        footerY,
+        {
+          width: contentWidth,
+          align: "center",
+        }
       );
 
     doc.end();
