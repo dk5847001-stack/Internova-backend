@@ -10,6 +10,7 @@ const authRoutes = require("./routes/authRoutes");
 const internshipRoutes = require("./routes/internshipRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
+const progressRoutes = require("./routes/progressRoutes");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use(cookieParser());
 app.use(morgan("dev"));
 app.use("/api/payments", paymentRoutes);
 app.use("/api/purchases", purchaseRoutes);
+app.use("/api/progress", progressRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is running...");

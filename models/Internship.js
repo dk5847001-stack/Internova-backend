@@ -14,6 +14,22 @@ const durationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const moduleSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
 const internshipSchema = new mongoose.Schema(
   {
     title: {
@@ -40,6 +56,7 @@ const internshipSchema = new mongoose.Schema(
       default: "",
     },
     durations: [durationSchema],
+    modules: [moduleSchema],
     isActive: {
       type: Boolean,
       default: true,
