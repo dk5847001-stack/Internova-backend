@@ -14,10 +14,39 @@ exports.getMyPurchases = async (req, res) => {
       .populate("internshipId")
       .sort({ createdAt: -1 });
 
+    const formatDate = (date) =>
+      new Date(date).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+    const enhancedPurchases = purchases.map((purchase) => {
+      const internship = purchase.internshipId || {};
+
+      return {
+        _id: purchase._id,
+        purchaseId: purchase._id,
+        paymentStatus: purchase.paymentStatus,
+        amount: purchase.amount,
+        durationLabel: purchase.durationLabel,
+        createdAt: purchase.createdAt,
+        issueDate: formatDate(purchase.createdAt),
+        referenceId: `INV-${purchase._id.toString().slice(-6).toUpperCase()}`,
+        razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
+        razorpayOrderId: purchase.razorpayOrderId || "N/A",
+        offerLetterAvailable: true,
+        downloadUrl: `/purchases/${purchase._id}/offer-letter`,
+        internshipTitle: internship.title || "N/A",
+        branch: internship.branch || "N/A",
+        category: internship.category || "N/A",
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      count: purchases.length,
-      purchases,
+      count: enhancedPurchases.length,
+      purchases: enhancedPurchases,
     });
   } catch (error) {
     console.error("GET MY PURCHASES ERROR:", error);
@@ -46,7 +75,7 @@ exports.downloadOfferLetter = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    const internship = purchase.internshipId;
+    const internship = purchase.internshipId || {};
 
     const doc = new PDFDocument({
       size: "A4",
@@ -58,8 +87,15 @@ exports.downloadOfferLetter = async (req, res) => {
       },
     });
 
-    const safeName = (user.name || "candidate").replace(/[^a-z0-9]/gi, "_");
-    const fileName = `${safeName}_offer_letter.pdf`;
+    const safeName = (user.name || "candidate")
+  .replace(/[^a-z0-9]/gi, "_")
+  .replace(/_+/g, "_")
+  .replace(/^_|_$/g, "");
+
+const fileName = `${safeName}_offer_letter_${purchase._id
+  .toString()
+  .slice(-6)
+  .toUpperCase()}.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);

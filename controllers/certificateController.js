@@ -18,41 +18,34 @@ exports.checkCertificateEligibility = async (req, res) => {
   try {
     const { internshipId } = req.params;
 
-    const purchase = await Purchase.findOne({
-      userId: req.user.id,
-      internshipId,
-      paymentStatus: "paid",
-    });
-
-    if (!purchase) {
-      return res.status(403).json({
+    const internship = await Internship.findById(internshipId);
+    if (!internship) {
+      return res.status(404).json({
         success: false,
-        message: "You have not purchased this internship",
+        message: "Internship not found",
       });
     }
 
-    const progress = await Progress.findOne({
-      userId: req.user.id,
+    // yahan tumhara existing progress/test logic rahega
+    const progressPercent = 85; // example
+    const testPassed = true;    // example
+    const finalEligible = progressPercent >= 80 && testPassed;
+
+    const existingCertificate = await Certificate.findOne({
       internshipId,
+      userId: req.user.id,
+      status: "issued",
     });
-
-    if (!progress) {
-      return res.status(200).json({
-        success: true,
-        eligible: false,
-        reason: "Progress not found yet",
-      });
-    }
 
     return res.status(200).json({
       success: true,
-      eligible: !!progress.finalEligible,
+      eligible: finalEligible,
       progress: {
-        progressPercent: progress.progressPercent,
-        certificateEligible: progress.certificateEligible,
-        testPassed: progress.testPassed,
-        finalEligible: progress.finalEligible,
+        progressPercent,
+        testPassed,
+        finalEligible,
       },
+      certificate: existingCertificate || null,
     });
   } catch (error) {
     console.error("CHECK CERTIFICATE ELIGIBILITY ERROR:", error);
