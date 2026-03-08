@@ -115,3 +115,29 @@ exports.updateInternship = async (req, res) => {
     });
   }
 };
+
+exports.deleteInternship = async (req, res) => {
+  try {
+    const internship = await Internship.findById(req.params.id);
+
+    if (!internship) {
+      return res.status(404).json({
+        success: false,
+        message: "Internship not found",
+      });
+    }
+
+    await Internship.findByIdAndDelete(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Internship deleted successfully",
+    });
+  } catch (error) {
+    console.error("DELETE INTERNSHIP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete internship",
+    });
+  }
+};
