@@ -143,6 +143,11 @@ exports.downloadCertificate = async (req, res) => {
       });
     }
 
+    const path = require("path");
+    const fs = require("fs");
+    const PDFDocument = require("pdfkit");
+    const QRCode = require("qrcode");
+
     const user = await User.findById(certificate.userId);
     const internship = await Internship.findById(certificate.internshipId);
     const purchase = await Purchase.findById(certificate.purchaseId);
@@ -157,10 +162,10 @@ exports.downloadCertificate = async (req, res) => {
       size: "A4",
       layout: "landscape",
       margins: {
-        top: 40,
-        bottom: 40,
-        left: 40,
-        right: 40,
+        top: 34,
+        bottom: 34,
+        left: 34,
+        right: 34,
       },
     });
 
@@ -172,6 +177,14 @@ exports.downloadCertificate = async (req, res) => {
 
     doc.pipe(res);
 
+    const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
+    const signaturePath = path.join(__dirname, "../uploads/branding/signature.png");
+    const sealPath = path.join(__dirname, "../uploads/branding/seal.png");
+
+    const hasLogo = fs.existsSync(logoPath);
+    const hasSignature = fs.existsSync(signaturePath);
+    const hasSeal = fs.existsSync(sealPath);
+
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
     const left = doc.page.margins.left;
@@ -180,38 +193,155 @@ exports.downloadCertificate = async (req, res) => {
 
     const colors = {
       navy: "#0B1736",
+      navySoft: "#233A67",
       gold: "#B7892E",
-      goldLight: "#E8D3A2",
+      goldLight: "#E7D3A5",
+      cream: "#FCFBF7",
       text: "#1F2937",
       soft: "#6B7280",
       white: "#FFFFFF",
-      light: "#FCFBF7",
-      border: "#D4C19C",
-      green: "#0F766E",
+      border: "#D6C299",
     };
 
-    // background
-    doc.rect(0, 0, pageWidth, pageHeight).fill(colors.light);
+    // Background
+    doc.rect(0, 0, pageWidth, pageHeight).fill(colors.cream);
 
-    // double border
-    doc
-      .lineWidth(2)
-      .strokeColor(colors.gold)
-      .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 12)
-      .stroke();
+    // Premium double border
+    // ===== Premium Royal Frame =====
+const outerX = 16;
+const outerY = 16;
+const outerW = pageWidth - 32;
+const outerH = pageHeight - 32;
 
-    doc
-      .lineWidth(1)
-      .strokeColor(colors.goldLight)
-      .roundedRect(30, 30, pageWidth - 60, pageHeight - 60, 10)
-      .stroke();
+const innerX = 30;
+const innerY = 30;
+const innerW = pageWidth - 60;
+const innerH = pageHeight - 60;
 
-    // header
+// outer main border
+doc
+  .lineWidth(2.4)
+  .strokeColor("#B7892E")
+  .roundedRect(outerX, outerY, outerW, outerH, 10)
+  .stroke();
+
+// second border
+doc
+  .lineWidth(1.2)
+  .strokeColor("#D9BE7A")
+  .roundedRect(innerX, innerY, innerW, innerH, 8)
+  .stroke();
+
+// third inner line
+doc
+  .lineWidth(0.8)
+  .strokeColor("#E9D8A6")
+  .roundedRect(innerX + 8, innerY + 8, innerW - 16, innerH - 16, 6)
+  .stroke();
+
+// ===== Corner ornaments =====
+const drawCorner = (x, y, flipX = 1, flipY = 1) => {
+  doc.save();
+  doc.translate(x, y);
+  doc.scale(flipX, flipY);
+
+  doc
+    .lineWidth(2)
+    .strokeColor("#B7892E")
+    .moveTo(0, 28)
+    .bezierCurveTo(0, 8, 8, 0, 28, 0)
+    .stroke();
+
+  doc
+    .lineWidth(1.2)
+    .strokeColor("#D9BE7A")
+    .moveTo(8, 28)
+    .bezierCurveTo(8, 14, 14, 8, 28, 8)
+    .stroke();
+
+  doc
+    .lineWidth(1.2)
+    .strokeColor("#B7892E")
+    .circle(10, 10, 2.2)
+    .stroke();
+
+  doc
+    .lineWidth(1)
+    .strokeColor("#D9BE7A")
+    .moveTo(28, 0)
+    .lineTo(52, 0)
+    .stroke();
+
+  doc
+    .lineWidth(1)
+    .strokeColor("#D9BE7A")
+    .moveTo(0, 28)
+    .lineTo(0, 52)
+    .stroke();
+
+  doc.restore();
+};
+
+drawCorner(outerX + 8, outerY + 8, 1, 1);
+drawCorner(pageWidth - outerX - 8, outerY + 8, -1, 1);
+drawCorner(outerX + 8, pageHeight - outerY - 8, 1, -1);
+drawCorner(pageWidth - outerX - 8, pageHeight - outerY - 8, -1, -1);
+
+// ===== Top and bottom center flourish =====
+const drawCenterFlourish = (centerX, y, flipY = 1) => {
+  doc.save();
+  doc.translate(centerX, y);
+  doc.scale(1, flipY);
+
+  doc
+    .lineWidth(1.5)
+    .strokeColor("#B7892E")
+    .moveTo(-34, 0)
+    .bezierCurveTo(-24, -10, -12, -10, 0, 0)
+    .bezierCurveTo(12, -10, 24, -10, 34, 0)
+    .stroke();
+
+  doc
+    .lineWidth(1)
+    .strokeColor("#D9BE7A")
+    .moveTo(-18, 0)
+    .bezierCurveTo(-10, -6, -4, -6, 0, 0)
+    .bezierCurveTo(4, -6, 10, -6, 18, 0)
+    .stroke();
+
+  doc
+    .circle(0, 0, 2.2)
+    .fillAndStroke("#B7892E", "#B7892E");
+
+  doc.restore();
+};
+
+drawCenterFlourish(pageWidth / 2, outerY + 10, 1);
+drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
+
+    // Top logo
+    if (hasLogo) {
+      try {
+        doc.image(logoPath, left + 8, 38, {
+          fit: [240, 96],
+          align: "left",
+          valign: "center",
+        });
+      } catch (e) { }
+    } else {
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(20)
+        .fillColor(colors.navy)
+        .text("Internova", left + 8, 52);
+    }
+
+    // Header
     doc
       .font("Helvetica-Bold")
       .fontSize(18)
       .fillColor(colors.gold)
-      .text("INTERNSHIP COMPLETION CERTIFICATE", left, 58, {
+      .text("INTERNSHIP COMPLETION CERTIFICATE", left, 54, {
         width: contentWidth,
         align: "center",
       });
@@ -220,32 +350,31 @@ exports.downloadCertificate = async (req, res) => {
       .font("Helvetica")
       .fontSize(15)
       .fillColor(colors.navy)
-      .text("Internova", left, 84, {
+      .text("Internova", left, 82, {
         width: contentWidth,
         align: "center",
       });
 
-    // decorative line
     doc
       .strokeColor(colors.goldLight)
-      .lineWidth(1.5)
-      .moveTo(180, 114)
-      .lineTo(pageWidth - 180, 114)
+      .lineWidth(1.2)
+      .moveTo(180, 112)
+      .lineTo(pageWidth - 180, 112)
       .stroke();
 
-    // body
+    // Certificate text
     doc
       .font("Helvetica")
       .fontSize(18)
       .fillColor(colors.soft)
-      .text("This is to proudly certify that", left, 145, {
+      .text("This is to proudly certify that", left, 146, {
         width: contentWidth,
         align: "center",
       });
 
     doc
       .font("Helvetica-Bold")
-      .fontSize(32)
+      .fontSize(31)
       .fillColor(colors.navy)
       .text(user.name, left, 182, {
         width: contentWidth,
@@ -254,7 +383,7 @@ exports.downloadCertificate = async (req, res) => {
 
     doc
       .font("Helvetica")
-      .fontSize(16)
+      .fontSize(15.5)
       .fillColor(colors.text)
       .text(
         `has successfully completed the ${internship.title}`,
@@ -268,12 +397,12 @@ exports.downloadCertificate = async (req, res) => {
 
     doc
       .font("Helvetica")
-      .fontSize(15)
+      .fontSize(14.5)
       .fillColor(colors.text)
       .text(
         `internship program under the ${internship.branch} stream for a duration of ${purchase.durationLabel}.`,
         left,
-        266,
+        268,
         {
           width: contentWidth,
           align: "center",
@@ -282,92 +411,119 @@ exports.downloadCertificate = async (req, res) => {
 
     doc
       .font("Helvetica")
-      .fontSize(13.5)
+      .fontSize(12.8)
       .fillColor(colors.soft)
       .text(
         "The candidate has fulfilled the required learning progress and assessment criteria as defined by Internova.",
         left,
-        308,
+        310,
         {
           width: contentWidth,
           align: "center",
         }
       );
 
-    // info strip
-    const infoY = 372;
+    // Info strip
+    const infoX = 110;
+    const infoY = 368;
+    const infoW = pageWidth - 250;
+    const infoH = 58;
+
     doc
-      .roundedRect(100, infoY, pageWidth - 200, 52, 10)
-      .fillAndStroke("#FFFFFF", "#E5D4AE");
+      .roundedRect(infoX, infoY, infoW, infoH, 10)
+      .fillAndStroke(colors.white, "#E6D6B1");
 
     doc
       .font("Helvetica-Bold")
-      .fontSize(11)
+      .fontSize(10.5)
       .fillColor(colors.text)
-      .text("Certificate ID", 120, infoY + 12)
-      .text("Issue Date", 355, infoY + 12)
-      .text("Status", 560, infoY + 12);
-
-    doc
-      .font("Helvetica")
-      .fontSize(11)
-      .fillColor(colors.soft)
-      .text(certificate.certificateId, 120, infoY + 28, { width: 180 })
-      .text(issuedDate, 355, infoY + 28, { width: 130 })
-      .text("VERIFIED", 560, infoY + 28, { width: 80 });
-
-    // QR code
-    const verifyUrl = `http://localhost:3000/verify/${certificate.certificateId}`;
-    const qrDataUrl = await QRCode.toDataURL(verifyUrl);
-    const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
-    const qrBuffer = Buffer.from(qrBase64, "base64");
-
-    doc.image(qrBuffer, pageWidth - 150, pageHeight - 180, {
-      fit: [90, 90],
-    });
-
-    doc
-      .font("Helvetica")
-      .fontSize(9.5)
-      .fillColor(colors.soft)
-      .text("Scan to verify", pageWidth - 162, pageHeight - 82, {
-        width: 110,
-        align: "center",
-      });
-
-    // signature
-    const signY = pageHeight - 130;
-
-    doc
-      .strokeColor(colors.soft)
-      .lineWidth(1)
-      .moveTo(90, signY)
-      .lineTo(250, signY)
-      .stroke();
-
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(12)
-      .fillColor(colors.navy)
-      .text("Authorized Signatory", 95, signY + 8);
+      .text("Certificate ID", infoX + 18, infoY + 12)
+      .text("Issue Date", infoX + 255, infoY + 12)
+      .text("Status", infoX + 448, infoY + 12);
 
     doc
       .font("Helvetica")
       .fontSize(10.5)
       .fillColor(colors.soft)
-      .text("Internova", 95, signY + 26);
+      .text(certificate.certificateId, infoX + 18, infoY + 30, { width: 200 })
+      .text(issuedDate, infoX + 255, infoY + 30, { width: 150 })
+      .text("VERIFIED", infoX + 448, infoY + 30, { width: 100 });
 
-    // seal badge
+    // Signature section
+    const signBaseY = pageHeight - 132;
+
+    if (hasSignature) {
+      try {
+        doc.image(signaturePath, 86, signBaseY - 22, {
+          fit: [150, 55],
+        });
+      } catch (e) { }
+    }
+
     doc
-      .circle(330, signY + 20, 28)
-      .fillAndStroke("#DBEAFE", "#93C5FD");
+      .strokeColor("#94A3B8")
+      .lineWidth(1)
+      .moveTo(84, signBaseY + 18)
+      .lineTo(248, signBaseY + 18)
+      .stroke();
 
     doc
       .font("Helvetica-Bold")
-      .fontSize(9)
-      .fillColor("#1D4ED8")
-      .text("SEALED", 305, signY + 16, {
-        width: 50,
+      .fontSize(11.5)
+      .fillColor(colors.navy)
+      .text("Authorized Signatory", 92, signBaseY + 28);
+
+    doc
+      .font("Helvetica")
+      .fontSize(10.5)
+      .fillColor(colors.soft)
+      .text("Internova", 92, signBaseY + 46);
+
+    // Seal
+    if (hasSeal) {
+      try {
+        doc.image(sealPath, 276, signBaseY - 42, {
+          fit: [190, 190],
+        });
+      } catch (e) { }
+    } else {
+      doc
+        .circle(360, signBaseY + 34, 55)
+        .fillAndStroke("#DBEAFE", "#93C5FD");
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(14)
+        .fillColor("#1D4ED8")
+        .text("SEALED", 320, signBaseY + 28, {
+          width: 80,
+          align: "center",
+        });
+    }
+
+    // QR code - moved further right to avoid overlap
+    const verifyUrl = `http://localhost:3000/verify/${certificate.certificateId}`;
+    const qrDataUrl = await QRCode.toDataURL(verifyUrl);
+    const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
+    const qrBuffer = Buffer.from(qrBase64, "base64");
+
+    const qrX = pageWidth - 150;
+    const qrY = pageHeight - 155;
+
+    doc
+      .roundedRect(qrX - 10, qrY - 10, 108, 124, 10)
+      .fillAndStroke("#FFFFFF", "#E5D4AE");
+
+    doc.image(qrBuffer, qrX, qrY, {
+      fit: [86, 86],
+    });
+
+    doc
+      .font("Helvetica")
+      .fontSize(9.2)
+      .fillColor(colors.soft)
+      .text("Scan to verify", qrX - 6, qrY + 92, {
+        width: 100,
         align: "center",
       });
 
