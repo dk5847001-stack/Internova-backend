@@ -40,11 +40,13 @@ exports.getQuiz = async (req, res) => {
       internshipId,
     });
 
+    const locked = existingResult?.passed === true;
+
     return res.status(200).json({
       success: true,
       title: internship.title,
       quiz: safeQuiz,
-      alreadySubmitted: !!existingResult,
+      locked,
       result: existingResult || null,
     });
   } catch (error) {
@@ -90,18 +92,6 @@ exports.submitQuiz = async (req, res) => {
       });
     }
 
-    const existingResult = await TestResult.findOne({
-      userId: req.user.id,
-      internshipId,
-    });
-
-    if (existingResult) {
-      return res.status(400).json({
-        success: false,
-        message: "Quiz already submitted for this internship",
-      });
-    }
-
     const quiz = internship.quiz || [];
     const totalQuestions = quiz.length;
 
@@ -109,6 +99,18 @@ exports.submitQuiz = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "No quiz available for this internship",
+      });
+    }
+
+    const existingResult = await TestResult.findOne({
+      userId: req.user.id,
+      internshipId,
+    });
+
+    if (existingResult?.passed) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already passed this quiz",
       });
     }
 
@@ -123,15 +125,26 @@ exports.submitQuiz = async (req, res) => {
     const percentage = Math.round((score / totalQuestions) * 100);
     const passed = percentage >= 60;
 
-    const result = await TestResult.create({
-      userId: req.user.id,
-      internshipId,
-      answers,
-      score,
-      totalQuestions,
-      percentage,
-      passed,
-    });
+    let result;
+
+    if (existingResult) {
+      existingResult.answers = answers;
+      existingResult.score = score;
+      existingResult.totalQuestions = totalQuestions;
+      existingResult.percentage = percentage;
+      existingResult.passed = passed;
+      result = await existingResult.save();
+    } else {
+      result = await TestResult.create({
+        userId: req.user.id,
+        internshipId,
+        answers,
+        score,
+        totalQuestions,
+        percentage,
+        passed,
+      });
+    }
 
     let progress = await Progress.findOne({
       userId: req.user.id,
@@ -156,7 +169,9 @@ exports.submitQuiz = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: passed ? "Quiz passed successfully" : "Quiz submitted, but you did not pass",
+      message: passed
+        ? "Quiz passed successfully"
+        : "Quiz submitted. You can retry until you pass.",
       result,
       progress,
     });
