@@ -2,14 +2,19 @@ const mongoose = require("mongoose");
 
 const certificateSchema = new mongoose.Schema(
   {
-    user: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    internship: {
+    internshipId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Internship",
+      required: true,
+    },
+    purchaseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Purchase",
       required: true,
     },
     certificateId: {
@@ -17,35 +22,21 @@ const certificateSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    studentName: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    internshipTitle: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    duration: {
-      type: String,
-      default: "",
-    },
-    issueDate: {
+    issuedAt: {
       type: Date,
       default: Date.now,
     },
-    pdfUrl: {
-      type: String,
-      default: "",
-    },
     status: {
       type: String,
-      enum: ["generated", "revoked"],
-      default: "generated",
+      enum: ["issued", "revoked"],
+      default: "issued",
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Certificate", certificateSchema);
+certificateSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
+
+module.exports =
+  mongoose.models.Certificate ||
+  mongoose.model("Certificate", certificateSchema);

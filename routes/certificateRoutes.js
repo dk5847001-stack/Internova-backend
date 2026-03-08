@@ -4,17 +4,14 @@ const {
   generateCertificate,
   downloadCertificate,
   verifyCertificate,
+  checkCertificateEligibility,
 } = require("../controllers/certificateController");
 
 const { protect } = require("../middleware/authMiddleware");
 
-// Generate certificate
 router.post("/generate/:internshipId", protect, generateCertificate);
-
-// Verify certificate
+router.get("/eligibility/:internshipId", protect, checkCertificateEligibility);
 router.get("/verify/:certificateId", verifyCertificate);
-
-// Download certificate
-router.get("/:certificateId/download", downloadCertificate);
+router.get("/:certificateId/download", protect, downloadCertificate);
 
 module.exports = router;
