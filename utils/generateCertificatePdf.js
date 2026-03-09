@@ -51,8 +51,7 @@ const generateCertificatePdf = ({
       const signaturePath = path.join(__dirname, "../assets/signature.png");
       const stampPath = path.join(__dirname, "../assets/stamp.png");
 
-      const verifyUrl = `http://localhost:5000/api/certificates/verify/${certificateId}`;
-
+      const verifyUrl = `${process.env.REACT_APP_API_BASE_URL}/certificates/verify/${certificateId}`;
       // Background
       doc.rect(0, 0, pageWidth, pageHeight).fill("#fcfcf9");
 
