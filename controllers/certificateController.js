@@ -8,7 +8,7 @@ const Progress = require("../models/Progress");
 const Purchase = require("../models/Purchase");
 const Internship = require("../models/Internship");
 const User = require("../models/User");
-
+const TestResult = require("../models/TestResult");
 const generateCertificateId = () => {
   const random = Math.floor(100000 + Math.random() * 900000);
   return `CERT-${Date.now()}-${random}`;
@@ -26,10 +26,50 @@ exports.checkCertificateEligibility = async (req, res) => {
       });
     }
 
-    // yahan tumhara existing progress/test logic rahega
-    const progressPercent = 85; // example
-    const testPassed = true;    // example
-    const finalEligible = progressPercent >= 80 && testPassed;
+    const purchase = await Purchase.findOne({
+      userId: req.user.id,
+      internshipId,
+      paymentStatus: "paid",
+    });
+
+    if (!purchase) {
+      return res.status(403).json({
+        success: false,
+        message: "You have not purchased this internship",
+      });
+    }
+
+    let progress = await Progress.findOne({
+      userId: req.user.id,
+      internshipId,
+    });
+
+    if (!progress) {
+      progress = await Progress.create({
+        userId: req.user.id,
+        internshipId,
+        completedModules: [],
+        progressPercent: 0,
+        certificateEligible: false,
+        testPassed: false,
+        finalEligible: false,
+      });
+    }
+
+    const existingTestResult = await TestResult.findOne({
+      userId: req.user.id,
+      internshipId,
+    });
+
+    const progressPercent = progress.progressPercent || 0;
+    const testPassed = !!progress.testPassed || !!existingTestResult?.passed;
+    const certificateEligible = progressPercent >= 80;
+    const finalEligible = certificateEligible && testPassed;
+
+    progress.testPassed = testPassed;
+    progress.certificateEligible = certificateEligible;
+    progress.finalEligible = finalEligible;
+    await progress.save();
 
     const existingCertificate = await Certificate.findOne({
       internshipId,
@@ -43,6 +83,7 @@ exports.checkCertificateEligibility = async (req, res) => {
       progress: {
         progressPercent,
         testPassed,
+        certificateEligible,
         finalEligible,
       },
       certificate: existingCertificate || null,
@@ -73,12 +114,33 @@ exports.generateCertificate = async (req, res) => {
       });
     }
 
-    const progress = await Progress.findOne({
+    let progress = await Progress.findOne({
       userId: req.user.id,
       internshipId,
     });
 
-    if (!progress || !progress.finalEligible) {
+    if (!progress) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not eligible for certificate yet",
+      });
+    }
+
+    const existingTestResult = await TestResult.findOne({
+      userId: req.user.id,
+      internshipId,
+    });
+
+    const certificateEligible = (progress.progressPercent || 0) >= 80;
+    const testPassed = !!progress.testPassed || !!existingTestResult?.passed;
+    const finalEligible = certificateEligible && testPassed;
+
+    progress.testPassed = testPassed;
+    progress.certificateEligible = certificateEligible;
+    progress.finalEligible = finalEligible;
+    await progress.save();
+
+    if (!finalEligible) {
       return res.status(403).json({
         success: false,
         message: "You are not eligible for certificate yet",
@@ -136,11 +198,6 @@ exports.downloadCertificate = async (req, res) => {
       });
     }
 
-    const path = require("path");
-    const fs = require("fs");
-    const PDFDocument = require("pdfkit");
-    const QRCode = require("qrcode");
-
     const user = await User.findById(certificate.userId);
     const internship = await Internship.findById(certificate.internshipId);
     const purchase = await Purchase.findById(certificate.purchaseId);
@@ -196,123 +253,114 @@ exports.downloadCertificate = async (req, res) => {
       border: "#D6C299",
     };
 
-    // Background
     doc.rect(0, 0, pageWidth, pageHeight).fill(colors.cream);
 
-    // Premium double border
-    // ===== Premium Royal Frame =====
-const outerX = 16;
-const outerY = 16;
-const outerW = pageWidth - 32;
-const outerH = pageHeight - 32;
+    const outerX = 16;
+    const outerY = 16;
+    const outerW = pageWidth - 32;
+    const outerH = pageHeight - 32;
 
-const innerX = 30;
-const innerY = 30;
-const innerW = pageWidth - 60;
-const innerH = pageHeight - 60;
+    const innerX = 30;
+    const innerY = 30;
+    const innerW = pageWidth - 60;
+    const innerH = pageHeight - 60;
 
-// outer main border
-doc
-  .lineWidth(2.4)
-  .strokeColor("#B7892E")
-  .roundedRect(outerX, outerY, outerW, outerH, 10)
-  .stroke();
+    doc
+      .lineWidth(2.4)
+      .strokeColor("#B7892E")
+      .roundedRect(outerX, outerY, outerW, outerH, 10)
+      .stroke();
 
-// second border
-doc
-  .lineWidth(1.2)
-  .strokeColor("#D9BE7A")
-  .roundedRect(innerX, innerY, innerW, innerH, 8)
-  .stroke();
+    doc
+      .lineWidth(1.2)
+      .strokeColor("#D9BE7A")
+      .roundedRect(innerX, innerY, innerW, innerH, 8)
+      .stroke();
 
-// third inner line
-doc
-  .lineWidth(0.8)
-  .strokeColor("#E9D8A6")
-  .roundedRect(innerX + 8, innerY + 8, innerW - 16, innerH - 16, 6)
-  .stroke();
+    doc
+      .lineWidth(0.8)
+      .strokeColor("#E9D8A6")
+      .roundedRect(innerX + 8, innerY + 8, innerW - 16, innerH - 16, 6)
+      .stroke();
 
-// ===== Corner ornaments =====
-const drawCorner = (x, y, flipX = 1, flipY = 1) => {
-  doc.save();
-  doc.translate(x, y);
-  doc.scale(flipX, flipY);
+    const drawCorner = (x, y, flipX = 1, flipY = 1) => {
+      doc.save();
+      doc.translate(x, y);
+      doc.scale(flipX, flipY);
 
-  doc
-    .lineWidth(2)
-    .strokeColor("#B7892E")
-    .moveTo(0, 28)
-    .bezierCurveTo(0, 8, 8, 0, 28, 0)
-    .stroke();
+      doc
+        .lineWidth(2)
+        .strokeColor("#B7892E")
+        .moveTo(0, 28)
+        .bezierCurveTo(0, 8, 8, 0, 28, 0)
+        .stroke();
 
-  doc
-    .lineWidth(1.2)
-    .strokeColor("#D9BE7A")
-    .moveTo(8, 28)
-    .bezierCurveTo(8, 14, 14, 8, 28, 8)
-    .stroke();
+      doc
+        .lineWidth(1.2)
+        .strokeColor("#D9BE7A")
+        .moveTo(8, 28)
+        .bezierCurveTo(8, 14, 14, 8, 28, 8)
+        .stroke();
 
-  doc
-    .lineWidth(1.2)
-    .strokeColor("#B7892E")
-    .circle(10, 10, 2.2)
-    .stroke();
+      doc
+        .lineWidth(1.2)
+        .strokeColor("#B7892E")
+        .circle(10, 10, 2.2)
+        .stroke();
 
-  doc
-    .lineWidth(1)
-    .strokeColor("#D9BE7A")
-    .moveTo(28, 0)
-    .lineTo(52, 0)
-    .stroke();
+      doc
+        .lineWidth(1)
+        .strokeColor("#D9BE7A")
+        .moveTo(28, 0)
+        .lineTo(52, 0)
+        .stroke();
 
-  doc
-    .lineWidth(1)
-    .strokeColor("#D9BE7A")
-    .moveTo(0, 28)
-    .lineTo(0, 52)
-    .stroke();
+      doc
+        .lineWidth(1)
+        .strokeColor("#D9BE7A")
+        .moveTo(0, 28)
+        .lineTo(0, 52)
+        .stroke();
 
-  doc.restore();
-};
+      doc.restore();
+    };
 
-drawCorner(outerX + 8, outerY + 8, 1, 1);
-drawCorner(pageWidth - outerX - 8, outerY + 8, -1, 1);
-drawCorner(outerX + 8, pageHeight - outerY - 8, 1, -1);
-drawCorner(pageWidth - outerX - 8, pageHeight - outerY - 8, -1, -1);
+    drawCorner(outerX + 8, outerY + 8, 1, 1);
+    drawCorner(pageWidth - outerX - 8, outerY + 8, -1, 1);
+    drawCorner(outerX + 8, pageHeight - outerY - 8, 1, -1);
+    drawCorner(pageWidth - outerX - 8, pageHeight - outerY - 8, -1, -1);
 
-// ===== Top and bottom center flourish =====
-const drawCenterFlourish = (centerX, y, flipY = 1) => {
-  doc.save();
-  doc.translate(centerX, y);
-  doc.scale(1, flipY);
+    const drawCenterFlourish = (centerX, y, flipY = 1) => {
+      doc.save();
+      doc.translate(centerX, y);
+      doc.scale(1, flipY);
 
-  doc
-    .lineWidth(1.5)
-    .strokeColor("#B7892E")
-    .moveTo(-34, 0)
-    .bezierCurveTo(-24, -10, -12, -10, 0, 0)
-    .bezierCurveTo(12, -10, 24, -10, 34, 0)
-    .stroke();
+      doc
+        .lineWidth(1.5)
+        .strokeColor("#B7892E")
+        .moveTo(-34, 0)
+        .bezierCurveTo(-24, -10, -12, -10, 0, 0)
+        .bezierCurveTo(12, -10, 24, -10, 34, 0)
+        .stroke();
 
-  doc
-    .lineWidth(1)
-    .strokeColor("#D9BE7A")
-    .moveTo(-18, 0)
-    .bezierCurveTo(-10, -6, -4, -6, 0, 0)
-    .bezierCurveTo(4, -6, 10, -6, 18, 0)
-    .stroke();
+      doc
+        .lineWidth(1)
+        .strokeColor("#D9BE7A")
+        .moveTo(-18, 0)
+        .bezierCurveTo(-10, -6, -4, -6, 0, 0)
+        .bezierCurveTo(4, -6, 10, -6, 18, 0)
+        .stroke();
 
-  doc
-    .circle(0, 0, 2.2)
-    .fillAndStroke("#B7892E", "#B7892E");
+      doc
+        .circle(0, 0, 2.2)
+        .fillAndStroke("#B7892E", "#B7892E");
 
-  doc.restore();
-};
+      doc.restore();
+    };
 
-drawCenterFlourish(pageWidth / 2, outerY + 10, 1);
-drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
+    drawCenterFlourish(pageWidth / 2, outerY + 10, 1);
+    drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
 
-    // Top logo
     if (hasLogo) {
       try {
         doc.image(logoPath, left + 8, 38, {
@@ -320,7 +368,7 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
           align: "left",
           valign: "center",
         });
-      } catch (e) { }
+      } catch (e) {}
     } else {
       doc
         .font("Helvetica-Bold")
@@ -329,7 +377,6 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
         .text("Internova", left + 8, 52);
     }
 
-    // Header
     doc
       .font("Helvetica-Bold")
       .fontSize(18)
@@ -355,7 +402,6 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
       .lineTo(pageWidth - 180, 112)
       .stroke();
 
-    // Certificate text
     doc
       .font("Helvetica")
       .fontSize(18)
@@ -416,7 +462,6 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
         }
       );
 
-    // Info strip
     const infoX = 110;
     const infoY = 368;
     const infoW = pageWidth - 250;
@@ -442,7 +487,6 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
       .text(issuedDate, infoX + 255, infoY + 30, { width: 150 })
       .text("VERIFIED", infoX + 448, infoY + 30, { width: 100 });
 
-    // Signature section
     const signBaseY = pageHeight - 132;
 
     if (hasSignature) {
@@ -450,7 +494,7 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
         doc.image(signaturePath, 86, signBaseY - 22, {
           fit: [150, 55],
         });
-      } catch (e) { }
+      } catch (e) {}
     }
 
     doc
@@ -472,13 +516,12 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
       .fillColor(colors.soft)
       .text("Internova", 92, signBaseY + 46);
 
-    // Seal
     if (hasSeal) {
       try {
         doc.image(sealPath, 276, signBaseY - 42, {
           fit: [190, 190],
         });
-      } catch (e) { }
+      } catch (e) {}
     } else {
       doc
         .circle(360, signBaseY + 34, 55)
@@ -494,7 +537,6 @@ drawCenterFlourish(pageWidth / 2, pageHeight - outerY - 10, -1);
         });
     }
 
-    // QR code - moved further right to avoid overlap
     const verifyUrl = `http://localhost:3000/verify/${certificate.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl);
     const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
@@ -572,4 +614,4 @@ exports.verifyCertificate = async (req, res) => {
       message: "Failed to verify certificate",
     });
   }
-};
+};                                                              

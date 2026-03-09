@@ -22,27 +22,27 @@ exports.getMyPurchases = async (req, res) => {
       });
 
     const enhancedPurchases = purchases.map((purchase) => {
-  const internship = purchase.internshipId || {};
+      const internship = purchase.internshipId || {};
 
-  return {
-    _id: purchase._id,
-    purchaseId: purchase._id,
-    internshipId: internship._id || null,
-    paymentStatus: purchase.paymentStatus,
-    amount: purchase.amount,
-    durationLabel: purchase.durationLabel,
-    createdAt: purchase.createdAt,
-    issueDate: formatDate(purchase.createdAt),
-    referenceId: `INV-${purchase._id.toString().slice(-6).toUpperCase()}`,
-    razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
-    razorpayOrderId: purchase.razorpayOrderId || "N/A",
-    offerLetterAvailable: true,
-    downloadUrl: `/purchases/${purchase._id}/offer-letter`,
-    internshipTitle: internship.title || "N/A",
-    branch: internship.branch || "N/A",
-    category: internship.category || "N/A",
-  };
-});
+      return {
+        _id: purchase._id,
+        purchaseId: purchase._id,
+        internshipId: internship._id || null,
+        paymentStatus: purchase.paymentStatus,
+        amount: purchase.amount,
+        durationLabel: purchase.durationLabel,
+        createdAt: purchase.createdAt,
+        issueDate: formatDate(purchase.createdAt),
+        referenceId: `INV-${purchase._id.toString().slice(-6).toUpperCase()}`,
+        razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
+        razorpayOrderId: purchase.razorpayOrderId || "N/A",
+        offerLetterAvailable: true,
+        downloadUrl: `/purchases/${purchase._id}/offer-letter`,
+        internshipTitle: internship.title || "N/A",
+        branch: internship.branch || "N/A",
+        category: internship.category || "N/A",
+      };
+    });
 
     return res.status(200).json({
       success: true,

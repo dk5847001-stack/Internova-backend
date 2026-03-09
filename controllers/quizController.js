@@ -158,14 +158,21 @@ exports.submitQuiz = async (req, res) => {
         completedModules: [],
         progressPercent: 0,
         certificateEligible: false,
-        testPassed: passed,
+        testPassed: false,
         finalEligible: false,
       });
-    } else {
-      progress.testPassed = passed;
-      progress.finalEligible = progress.certificateEligible && passed;
-      await progress.save();
     }
+
+    // ✅ always sync progress with latest quiz + module state
+    const progressPercent = progress.progressPercent || 0;
+    const certificateEligible = progressPercent >= 80;
+    const finalEligible = certificateEligible && passed;
+
+    progress.testPassed = passed;
+    progress.certificateEligible = certificateEligible;
+    progress.finalEligible = finalEligible;
+
+    await progress.save();
 
     return res.status(200).json({
       success: true,
