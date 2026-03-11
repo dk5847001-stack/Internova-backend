@@ -9,10 +9,13 @@ exports.getMyPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find({
       userId: req.user.id,
-      paymentStatus: "paid",
     })
       .populate("internshipId")
       .sort({ createdAt: -1 });
+
+    console.log("REQ USER ID:", req.user.id);
+    console.log("PURCHASES FOUND:", purchases.length);
+    console.log("PURCHASES DATA:", purchases);
 
     const formatDate = (date) =>
       new Date(date).toLocaleDateString("en-IN", {
@@ -36,8 +39,8 @@ exports.getMyPurchases = async (req, res) => {
         referenceId: `INV-${purchase._id.toString().slice(-6).toUpperCase()}`,
         razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
         razorpayOrderId: purchase.razorpayOrderId || "N/A",
-        offerLetterAvailable: true,
-        downloadUrl: `/purchases/${purchase._id}/offer-letter`,
+        offerLetterAvailable: purchase.paymentStatus === "paid",
+        downloadUrl: `/purchases/offer-letter/${purchase._id}`,
         internshipTitle: internship.title || "N/A",
         branch: internship.branch || "N/A",
         category: internship.category || "N/A",
@@ -64,9 +67,16 @@ exports.downloadOfferLetter = async (req, res) => {
 
     const purchase = await Purchase.findOne({
       _id: purchaseId,
-      userId: req.user.id,
-      paymentStatus: "paid",
-    }).populate("internshipId");
+      $or: [{ userId: req.user.id }, { user: req.user.id }],
+      $or: [
+        { paymentStatus: "paid" },
+        { paymentStatus: "PAID" },
+        { paymentStatus: "success" },
+        { paymentStatus: "SUCCESS" },
+      ],
+    })
+      .populate("internshipId")
+      .populate("internship");
 
     if (!purchase) {
       return res.status(404).json({
@@ -76,7 +86,7 @@ exports.downloadOfferLetter = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    const internship = purchase.internshipId || {};
+    const internship = purchase.internshipId || purchase.internship || {};
 
     const doc = new PDFDocument({
       size: "A4",
@@ -89,14 +99,14 @@ exports.downloadOfferLetter = async (req, res) => {
     });
 
     const safeName = (user.name || "candidate")
-  .replace(/[^a-z0-9]/gi, "_")
-  .replace(/_+/g, "_")
-  .replace(/^_|_$/g, "");
+      .replace(/[^a-z0-9]/gi, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
 
-const fileName = `${safeName}_offer_letter_${purchase._id
-  .toString()
-  .slice(-6)
-  .toUpperCase()}.pdf`;
+    const fileName = `${safeName}_offer_letter_${purchase._id
+      .toString()
+      .slice(-6)
+      .toUpperCase()}.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
@@ -150,29 +160,24 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         ? `INR ${Number(purchase.amount).toFixed(2)}`
         : "INR 0.00";
 
-    // ================= PAGE BACKGROUND =================
     doc.rect(0, 0, pageWidth, pageHeight).fill(colors.white);
 
-    // Outer frame
     doc
       .lineWidth(1.2)
       .strokeColor("#E5E7EB")
       .roundedRect(16, 16, pageWidth - 32, pageHeight - 32, 18)
       .stroke();
 
-    // Inner premium frame
     doc
       .lineWidth(0.8)
       .strokeColor("#F1F5F9")
       .roundedRect(24, 24, pageWidth - 48, pageHeight - 48, 16)
       .stroke();
 
-    // Top accent line
     doc
       .roundedRect(24, 24, pageWidth - 48, 8, 4)
       .fill(colors.navy);
 
-    // ================= HEADER =================
     const headerY = 42;
     const headerH = 82;
 
@@ -187,7 +192,7 @@ const fileName = `${safeName}_offer_letter_${purchase._id
           align: "left",
           valign: "center",
         });
-      } catch (e) { }
+      } catch (e) {}
     }
 
     doc
@@ -208,7 +213,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         align: "center",
       });
 
-    // ================= META BAR =================
     const metaY = headerY + headerH + 10;
     const metaH = 34;
 
@@ -232,7 +236,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
       .text(referenceId, left + 287, metaY + 11, { width: 120 })
       .text("PAID", left + 457, metaY + 11, { width: 70 });
 
-    // Watermark
     doc.save();
     doc.rotate(-35, { origin: [300, 420] });
     doc
@@ -242,7 +245,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
       .text("INTERNOVA", 145, 405);
     doc.restore();
 
-    // ================= BODY START =================
     let y = metaY + metaH + 14;
 
     doc
@@ -286,15 +288,7 @@ const fileName = `${safeName}_offer_letter_${purchase._id
 
     y += 20;
 
-    doc
-      .font("Helvetica")
-      .fontSize(10.2)
-      .fillColor(colors.text)
-      .text(`Dear ${user.name || "Candidate"},`, left, y);
-
-    y += 18;
-
-    const bodyText1 = `We are pleased to confirm your enrollment in the internship program "${internship.title}" offered by Internova. Based on your successful registration and payment confirmation, you have been provisionally admitted for a duration of ${purchase.durationLabel || "the selected period"}.`;
+    const bodyText1 = `We are pleased to confirm your enrollment in the internship program "${internship.title}" offered by Internova. Based on your successful registration and payment confirmation, you have been provisionally admitted for a duration of ${purchase.durationLabel || purchase.duration || "the selected period"}.`;
 
     const bodyText2 = `This internship is intended to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable evaluation guidelines during the internship tenure.`;
 
@@ -324,7 +318,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
 
     y = doc.y + 16;
 
-    // ================= DETAILS CARD =================
     const cardY = y;
     const cardH = 128;
 
@@ -351,21 +344,18 @@ const fileName = `${safeName}_offer_letter_${purchase._id
     const col1X = left + 16;
     const col2X = left + 290;
 
-    // row 1
     labelStyle().text("Candidate Name", col1X, cardY + 42);
     labelStyle().text("Duration", col2X, cardY + 42);
     valueStyle().text(user.name || "N/A", col1X, cardY + 55, { width: 210 });
-    valueStyle().text(purchase.durationLabel || "N/A", col2X, cardY + 55, {
+    valueStyle().text(purchase.durationLabel || purchase.duration || "N/A", col2X, cardY + 55, {
       width: 180,
     });
 
-    // row 2
     labelStyle().text("Registered Email", col1X, cardY + 74);
     labelStyle().text("Amount Paid", col2X, cardY + 74);
     valueStyle().text(user.email || "N/A", col1X, cardY + 87, { width: 210 });
     valueStyle().text(amountPaid, col2X, cardY + 87, { width: 180 });
 
-    // row 3
     labelStyle().text("Program Name", col1X, cardY + 106);
     labelStyle().text("Payment Status", col2X, cardY + 106);
     valueStyle().text(internship.title || "N/A", col1X, cardY + 119, {
@@ -380,12 +370,10 @@ const fileName = `${safeName}_offer_letter_${purchase._id
 
     y = cardY + cardH + 14;
 
-    // ================= PAYMENT + NOTE =================
     const boxGap = 12;
     const boxW = (contentWidth - boxGap) / 2;
     const boxH = 74;
 
-    // Payment box
     doc
       .roundedRect(left, y, boxW, boxH, 12)
       .fillAndStroke("#FFFFFF", colors.border);
@@ -407,7 +395,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         width: boxW - 24,
       });
 
-    // Note box
     const noteX = left + boxW + boxGap;
 
     doc
@@ -437,7 +424,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
 
     y += boxH + 16;
 
-    // ================= CLOSING =================
     doc
       .font("Helvetica")
       .fontSize(10)
@@ -453,7 +439,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         }
       );
 
-    // ================= SIGNATURE AREA FIXED NEAR BOTTOM =================
     const footerY = pageHeight - 42;
     const signBaseY = footerY - 92;
 
@@ -468,7 +453,7 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         doc.image(signaturePath, left, signBaseY - 4, {
           fit: [125, 34],
         });
-      } catch (e) { }
+      } catch (e) {}
     }
 
     doc
@@ -497,7 +482,7 @@ const fileName = `${safeName}_offer_letter_${purchase._id
           fit: [120, 120],
           align: "right",
         });
-      } catch (e) { }
+      } catch (e) {}
     } else {
       doc
         .circle(right - 48, signBaseY + 26, 24)
@@ -513,7 +498,6 @@ const fileName = `${safeName}_offer_letter_${purchase._id
         });
     }
 
-    // ================= FOOTER =================
     doc
       .strokeColor(colors.border)
       .lineWidth(1)

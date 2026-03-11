@@ -49,8 +49,16 @@ exports.getSingleInternship = async (req, res) => {
 // CREATE internship
 exports.createInternship = async (req, res) => {
   try {
-    const { title, branch, category, description, thumbnail, durations } =
-      req.body;
+    const {
+      title,
+      branch,
+      category,
+      description,
+      thumbnail,
+      durations,
+      modules,
+      quiz,
+    } = req.body;
 
     if (!title || !branch || !description || !durations?.length) {
       return res.status(400).json({
@@ -59,6 +67,32 @@ exports.createInternship = async (req, res) => {
       });
     }
 
+    const cleanedModules = Array.isArray(modules)
+      ? modules
+          .filter((m) => m.title && m.title.trim())
+          .map((m) => ({
+            title: m.title.trim(),
+            description: m.description?.trim() || "",
+          }))
+      : [];
+
+    const cleanedQuiz = Array.isArray(quiz)
+      ? quiz
+          .filter(
+            (q) =>
+              q.question &&
+              q.question.trim() &&
+              Array.isArray(q.options) &&
+              q.options.length === 4 &&
+              q.options.every((opt) => String(opt).trim() !== "")
+          )
+          .map((q) => ({
+            question: q.question.trim(),
+            options: q.options.map((opt) => String(opt).trim()),
+            correctAnswer: Number(q.correctAnswer),
+          }))
+      : [];
+
     const internship = await Internship.create({
       title,
       branch,
@@ -66,6 +100,8 @@ exports.createInternship = async (req, res) => {
       description,
       thumbnail,
       durations,
+      modules: cleanedModules,
+      quiz: cleanedQuiz,
     });
 
     return res.status(201).json({
@@ -77,11 +113,12 @@ exports.createInternship = async (req, res) => {
     console.error("CREATE INTERNSHIP ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to create internship",
+      message: error.message || "Failed to create internship",
     });
   }
 };
 
+// UPDATE internship
 exports.updateInternship = async (req, res) => {
   try {
     const internship = await Internship.findById(req.params.id);
@@ -93,25 +130,69 @@ exports.updateInternship = async (req, res) => {
       });
     }
 
-    const updatedInternship = await Internship.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+    const {
+      title,
+      branch,
+      category,
+      description,
+      thumbnail,
+      durations,
+      modules,
+      quiz,
+      isActive,
+    } = req.body;
+
+    const cleanedModules = Array.isArray(modules)
+      ? modules
+          .filter((m) => m.title && m.title.trim())
+          .map((m) => ({
+            title: m.title.trim(),
+            description: m.description?.trim() || "",
+          }))
+      : [];
+
+    const cleanedQuiz = Array.isArray(quiz)
+      ? quiz
+          .filter(
+            (q) =>
+              q.question &&
+              q.question.trim() &&
+              Array.isArray(q.options) &&
+              q.options.length === 4 &&
+              q.options.every((opt) => String(opt).trim() !== "")
+          )
+          .map((q) => ({
+            question: q.question.trim(),
+            options: q.options.map((opt) => String(opt).trim()),
+            correctAnswer: Number(q.correctAnswer),
+          }))
+      : [];
+
+    internship.title = title;
+    internship.branch = branch;
+    internship.category = category;
+    internship.description = description;
+    internship.thumbnail = thumbnail;
+    internship.durations = durations;
+    internship.modules = cleanedModules;
+    internship.quiz = cleanedQuiz;
+
+    if (typeof isActive === "boolean") {
+      internship.isActive = isActive;
+    }
+
+    await internship.save();
 
     return res.status(200).json({
       success: true,
       message: "Internship updated successfully",
-      internship: updatedInternship,
+      internship,
     });
   } catch (error) {
     console.error("UPDATE INTERNSHIP ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to update internship",
+      message: error.message || "Failed to update internship",
     });
   }
 };
