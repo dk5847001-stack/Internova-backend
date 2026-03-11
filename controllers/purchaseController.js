@@ -53,10 +53,10 @@ exports.getMyPurchases = async (req, res) => {
       purchases: enhancedPurchases,
     });
   } catch (error) {
-    console.error("GET MY PURCHASES ERROR:", error);
+    console.error("GET MY Enrollments ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch purchases",
+      message: "Failed to fetch enrollments",
     });
   }
 };
