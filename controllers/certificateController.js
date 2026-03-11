@@ -540,7 +540,7 @@ exports.downloadCertificate = async (req, res) => {
 const FRONTEND_URL =
   process.env.REACT_APP_FRONTEND_URL || "http://localhost:3000";
 
-const verifyUrl = `${FRONTEND_URL}/verify/${certificate.certificateId}`;    
+const verifyUrl = `${process.env.CLIENT_URL}/verify/${certificate.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl);
     const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
     const qrBuffer = Buffer.from(qrBase64, "base64");

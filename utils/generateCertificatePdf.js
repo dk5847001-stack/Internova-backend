@@ -54,7 +54,7 @@ const generateCertificatePdf = ({
 const API_BASE_URL =
   process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
 
-const verifyUrl = `${API_BASE_URL}/certificates/verify/${certificateId}`;
+const verifyUrl = `${process.env.CLIENT_URL}/verify/${certificate.certificateId}`;
       // Background
       doc.rect(0, 0, pageWidth, pageHeight).fill("#fcfcf9");
 
