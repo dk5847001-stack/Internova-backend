@@ -67,16 +67,9 @@ exports.downloadOfferLetter = async (req, res) => {
 
     const purchase = await Purchase.findOne({
       _id: purchaseId,
-      $or: [{ userId: req.user.id }, { user: req.user.id }],
-      $or: [
-        { paymentStatus: "paid" },
-        { paymentStatus: "PAID" },
-        { paymentStatus: "success" },
-        { paymentStatus: "SUCCESS" },
-      ],
-    })
-      .populate("internshipId")
-      .populate("internship");
+      userId: req.user.id,
+      paymentStatus: "paid",
+    }).populate("internshipId");
 
     if (!purchase) {
       return res.status(404).json({
@@ -86,7 +79,11 @@ exports.downloadOfferLetter = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    const internship = purchase.internshipId || purchase.internship || {};
+    const internship = purchase.internshipId || {};
+
+    const userName = user?.name || "Candidate";
+    const userEmail = user?.email || "N/A";
+    const internshipTitle = internship?.title || "Program";
 
     const doc = new PDFDocument({
       size: "A4",
@@ -98,12 +95,12 @@ exports.downloadOfferLetter = async (req, res) => {
       },
     });
 
-    const safeName = (user.name || "candidate")
+    const safeName = userName
       .replace(/[^a-z0-9]/gi, "_")
       .replace(/_+/g, "_")
       .replace(/^_|_$/g, "");
 
-    const fileName = `${safeName}_offer_letter_${purchase._id
+    const fileName = `${safeName}_access_letter_${purchase._id
       .toString()
       .slice(-6)
       .toUpperCase()}.pdf`;
@@ -142,7 +139,6 @@ exports.downloadOfferLetter = async (req, res) => {
       white: "#FFFFFF",
       green: "#065F46",
       greenBg: "#D1FAE5",
-      shadow: "#E5E7EB",
     };
 
     const formatDate = (date) =>
@@ -192,14 +188,16 @@ exports.downloadOfferLetter = async (req, res) => {
           align: "left",
           valign: "center",
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error("Logo load error:", e.message);
+      }
     }
 
     doc
       .fillColor(colors.white)
       .font("Helvetica-Bold")
       .fontSize(21)
-      .text("INTERNSHIP OFFER LETTER", left, headerY + 18, {
+      .text("PROGRAM ACCESS LETTER", left, headerY + 18, {
         width: contentWidth,
         align: "center",
       });
@@ -236,15 +234,6 @@ exports.downloadOfferLetter = async (req, res) => {
       .text(referenceId, left + 287, metaY + 11, { width: 120 })
       .text("PAID", left + 457, metaY + 11, { width: 70 });
 
-    doc.save();
-    doc.rotate(-35, { origin: [300, 420] });
-    doc
-      .fillColor("#F8FAFC")
-      .font("Helvetica-Bold")
-      .fontSize(42)
-      .text("INTERNOVA", 145, 405);
-    doc.restore();
-
     let y = metaY + metaH + 14;
 
     doc
@@ -259,7 +248,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(11.6)
       .fillColor(colors.text)
-      .text(user.name || "Candidate", left, y);
+      .text(userName, left, y);
 
     y += 15;
 
@@ -267,7 +256,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica")
       .fontSize(9.8)
       .fillColor(colors.soft)
-      .text(user.email || "N/A", left, y);
+      .text(userEmail, left, y);
 
     y += 22;
 
@@ -284,15 +273,23 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(11)
       .fillColor(colors.text)
-      .text("Subject: Formal Offer of Internship Enrollment", left, y);
+      .text("Subject: Confirmation of Program Enrollment and Access", left, y);
 
     y += 20;
 
-    const bodyText1 = `We are pleased to confirm your enrollment in the internship program "${internship.title}" offered by Internova. Based on your successful registration and payment confirmation, you have been provisionally admitted for a duration of ${purchase.durationLabel || purchase.duration || "the selected period"}.`;
+    doc
+      .font("Helvetica")
+      .fontSize(10.2)
+      .fillColor(colors.text)
+      .text(`Dear ${userName},`, left, y);
 
-    const bodyText2 = `This internship is intended to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable evaluation guidelines during the internship tenure.`;
+    y += 18;
 
-    const bodyText3 = `This document serves as your official internship offer letter. Certificate issuance shall remain subject to successful completion of the applicable progress, assessment, and eligibility requirements defined by Internova.`;
+    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted access for a duration of ${purchase.durationLabel || "the selected period"}.`;
+
+    const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the access period.`;
+
+    const bodyText3 = `This document serves as your official program access letter. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
 
     doc.text(bodyText1, left, y, {
       width: contentWidth,
@@ -333,7 +330,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(11.5)
       .fillColor(colors.navy)
-      .text("Internship Enrollment Details", left + 14, cardY + 10);
+      .text("Enrollment Details", left + 14, cardY + 10);
 
     const labelStyle = () =>
       doc.font("Helvetica-Bold").fontSize(9.2).fillColor(colors.text);
@@ -344,23 +341,21 @@ exports.downloadOfferLetter = async (req, res) => {
     const col1X = left + 16;
     const col2X = left + 290;
 
-    labelStyle().text("Candidate Name", col1X, cardY + 42);
+    labelStyle().text("Learner Name", col1X, cardY + 42);
     labelStyle().text("Duration", col2X, cardY + 42);
-    valueStyle().text(user.name || "N/A", col1X, cardY + 55, { width: 210 });
-    valueStyle().text(purchase.durationLabel || purchase.duration || "N/A", col2X, cardY + 55, {
+    valueStyle().text(userName, col1X, cardY + 55, { width: 210 });
+    valueStyle().text(purchase.durationLabel || "N/A", col2X, cardY + 55, {
       width: 180,
     });
 
     labelStyle().text("Registered Email", col1X, cardY + 74);
     labelStyle().text("Amount Paid", col2X, cardY + 74);
-    valueStyle().text(user.email || "N/A", col1X, cardY + 87, { width: 210 });
+    valueStyle().text(userEmail, col1X, cardY + 87, { width: 210 });
     valueStyle().text(amountPaid, col2X, cardY + 87, { width: 180 });
 
     labelStyle().text("Program Name", col1X, cardY + 106);
     labelStyle().text("Payment Status", col2X, cardY + 106);
-    valueStyle().text(internship.title || "N/A", col1X, cardY + 119, {
-      width: 210,
-    });
+    valueStyle().text(internshipTitle, col1X, cardY + 119, { width: 210 });
     valueStyle().text(
       (purchase.paymentStatus || "paid").toUpperCase(),
       col2X,
@@ -429,7 +424,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .fontSize(10)
       .fillColor(colors.text)
       .text(
-        "We are delighted to welcome you to Internova and wish you a valuable and enriching internship journey ahead.",
+        "We are delighted to welcome you to Internova and wish you a valuable learning journey ahead.",
         left,
         y,
         {
@@ -453,7 +448,9 @@ exports.downloadOfferLetter = async (req, res) => {
         doc.image(signaturePath, left, signBaseY - 4, {
           fit: [125, 34],
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error("Signature load error:", e.message);
+      }
     }
 
     doc
@@ -474,7 +471,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .fontSize(9.4)
       .fillColor(colors.soft)
       .text("Internova", left, signBaseY + 47)
-      .text("Internship Program Management", left, signBaseY + 60);
+      .text("Program Management", left, signBaseY + 60);
 
     if (hasSeal) {
       try {
@@ -482,20 +479,9 @@ exports.downloadOfferLetter = async (req, res) => {
           fit: [120, 120],
           align: "right",
         });
-      } catch (e) {}
-    } else {
-      doc
-        .circle(right - 48, signBaseY + 26, 24)
-        .fillAndStroke(colors.greenBg, "#A7F3D0");
-
-      doc
-        .fillColor(colors.green)
-        .font("Helvetica-Bold")
-        .fontSize(8)
-        .text("VERIFIED", right - 74, signBaseY + 22, {
-          width: 52,
-          align: "center",
-        });
+      } catch (e) {
+        console.error("Seal load error:", e.message);
+      }
     }
 
     doc
@@ -521,10 +507,10 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.end();
   } catch (error) {
-    console.error("DOWNLOAD OFFER LETTER ERROR:", error);
+    console.error("DOWNLOAD ACCESS LETTER ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to generate offer letter",
+      message: "Failed to generate access letter",
     });
   }
 };
