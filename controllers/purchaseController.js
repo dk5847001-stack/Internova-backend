@@ -273,7 +273,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(11)
       .fillColor(colors.text)
-      .text("Subject: Confirmation of Program Enrollment and Access", left, y);
+      .text("Subject:  Formal Offer Letter of Internship Enrollment", left, y);
 
     y += 20;
 
@@ -289,7 +289,7 @@ exports.downloadOfferLetter = async (req, res) => {
 
     const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the access period.`;
 
-    const bodyText3 = `This document serves as your official program access letter. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
+    const bodyText3 = `This document serves as your official internship offer letter. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
 
     doc.text(bodyText1, left, y, {
       width: contentWidth,
