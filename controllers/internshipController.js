@@ -16,7 +16,7 @@ exports.getAllInternships = async (req, res) => {
     console.error("GET INTERNSHIPS ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch internships",
+      message: "Failed to fetch programs",
     });
   }
 };
