@@ -439,7 +439,7 @@ exports.downloadCertificate = async (req, res) => {
       .fontSize(14.5)
       .fillColor(colors.text)
       .text(
-        `program under the ${internship.branch} stream for a duration of ${purchase.durationLabel}.`,
+        `under the ${internship.branch} stream for a duration of ${purchase.durationLabel}.`,
         left,
         268,
         {
