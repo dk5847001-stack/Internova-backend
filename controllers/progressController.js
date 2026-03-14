@@ -79,7 +79,7 @@ const getUnlockedModules = (internship, progressDoc) => {
 exports.getCourseProgress = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user.id || req.user._id;
 
     const internship = await Internship.findById(internshipId);
     if (!internship) {
@@ -89,7 +89,6 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
-    // ✅ FIXED according to Purchase.js
     const purchase = await Purchase.findOne({
       userId: userId,
       internshipId: internshipId,
@@ -114,11 +113,7 @@ exports.getCourseProgress = async (req, res) => {
         internship: internshipId,
         purchase: purchase._id,
         enrolledAt: purchase.createdAt || new Date(),
-
-        // Purchase.durationLabel ko days me map karna later better hoga,
-        // abhi internship.durationDays fallback use kar rahe hain
         selectedDurationDays: internship.durationDays || 30,
-
         totalModules: internship.modules.length,
         totalVideos: internship.modules.reduce(
           (sum, module) => sum + (module.videos?.length || 0),
@@ -204,7 +199,7 @@ exports.updateVideoProgress = async (req, res) => {
   try {
     const { internshipId } = req.params;
     const { moduleId, videoId, watchedPercent } = req.body;
-    const userId = req.user._id;
+    const userId = req.user.id || req.user._id;
 
     if (!moduleId || !videoId || watchedPercent === undefined) {
       return res.status(400).json({
@@ -311,7 +306,7 @@ exports.updateVideoProgress = async (req, res) => {
 exports.unlockAllModules = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user.id || req.user._id;
 
     const progress = await Progress.findOne({
       user: userId,
@@ -348,7 +343,7 @@ exports.unlockAllModules = async (req, res) => {
 exports.getEligibilityStatus = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user.id || req.user._id;
 
     const internship = await Internship.findById(internshipId);
     const progress = await Progress.findOne({
