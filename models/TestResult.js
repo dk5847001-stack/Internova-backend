@@ -2,21 +2,35 @@ const mongoose = require("mongoose");
 
 const testResultSchema = new mongoose.Schema(
   {
-    user: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       index: true,
     },
-    internship: {
+    internshipId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Internship",
       required: true,
       index: true,
     },
+    answers: {
+      type: Array,
+      default: [],
+    },
     score: {
       type: Number,
       required: true,
+      min: 0,
+      default: 0,
+    },
+    totalQuestions: {
+      type: Number,
+      default: 0,
+    },
+    percentage: {
+      type: Number,
+      default: 0,
       min: 0,
       max: 100,
     },
@@ -36,4 +50,7 @@ const testResultSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("TestResult", testResultSchema);
+testResultSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
+
+module.exports =
+  mongoose.models.TestResult || mongoose.model("TestResult", testResultSchema);
