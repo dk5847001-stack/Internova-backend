@@ -1,5 +1,25 @@
 const mongoose = require("mongoose");
 
+const durationSchema = new mongoose.Schema(
+  {
+    label: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    durationDays: {
+      type: Number,
+      default: 30,
+    },
+  },
+  { _id: false }
+);
+
 const videoSchema = new mongoose.Schema(
   {
     title: {
@@ -83,6 +103,8 @@ const internshipSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
+    // fallback single duration fields
     duration: {
       type: String,
       default: "",
@@ -96,6 +118,9 @@ const internshipSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
+    // ✅ main pricing plans
+    durations: [durationSchema],
 
     // learning structure
     modules: [moduleSchema],
@@ -132,6 +157,14 @@ const internshipSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    thumbnail: {
+      type: String,
+      default: "",
+    },
+    quiz: {
+      type: Array,
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -140,4 +173,5 @@ const internshipSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Internship", internshipSchema);
+module.exports =
+  mongoose.models.Internship || mongoose.model("Internship", internshipSchema);

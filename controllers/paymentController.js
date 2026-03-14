@@ -31,7 +31,6 @@ exports.createOrder = async (req, res) => {
 
     let selectedDuration = null;
 
-    // Case 1: old durations array exists
     if (Array.isArray(internship.durations) && internship.durations.length > 0) {
       if (!durationLabel) {
         return res.status(400).json({
@@ -51,12 +50,23 @@ exports.createOrder = async (req, res) => {
         });
       }
     } else {
-      // Case 2: new simplified internship model
       selectedDuration = {
-        label: durationLabel || internship.duration || `${internship.durationDays || 30} Days`,
-        price: internship.price || 1,
+        label:
+          durationLabel ||
+          internship.duration ||
+          `${internship.durationDays || 30} Days`,
+        price: internship.price || 0,
         durationDays: internship.durationDays || 30,
       };
+    }
+
+    const finalPrice = Number(selectedDuration.price || 0);
+
+    if (Number.isNaN(finalPrice) || finalPrice <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship price",
+      });
     }
 
     const existingPaidPurchase = await Purchase.findOne({
@@ -73,23 +83,15 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    const amountInPaise = Number(selectedDuration.price || 0) * 100;
-
-    if (!amountInPaise || amountInPaise <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid internship price",
-      });
-    }
-
     const options = {
-      amount: amountInPaise,
+      amount: Math.round(finalPrice * 100),
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
       notes: {
         internshipId: internship._id.toString(),
         durationLabel: selectedDuration.label,
-        userId: userId.toString(),
+        durationDays: String(selectedDuration.durationDays || 30),
+        userId: String(userId),
       },
     };
 
@@ -99,7 +101,7 @@ exports.createOrder = async (req, res) => {
       userId,
       internshipId: internship._id,
       durationLabel: selectedDuration.label,
-      amount: selectedDuration.price,
+      amount: finalPrice,
       razorpayOrderId: order.id,
       paymentStatus: "created",
     });
@@ -111,7 +113,11 @@ exports.createOrder = async (req, res) => {
       internship: {
         title: internship.title,
       },
-      duration: selectedDuration,
+      duration: {
+        label: selectedDuration.label,
+        price: finalPrice,
+        durationDays: selectedDuration.durationDays || 30,
+      },
     });
   } catch (error) {
     console.error("CREATE ORDER ERROR:", error);
