@@ -9,6 +9,7 @@ const Purchase = require("../models/Purchase");
 const Internship = require("../models/Internship");
 const User = require("../models/User");
 const TestResult = require("../models/TestResult");
+
 const generateCertificateId = () => {
   const random = Math.floor(100000 + Math.random() * 900000);
   return `CERT-${Date.now()}-${random}`;
@@ -17,6 +18,7 @@ const generateCertificateId = () => {
 exports.checkCertificateEligibility = async (req, res) => {
   try {
     const { internshipId } = req.params;
+    const userId = req.user.id || req.user._id;
 
     const internship = await Internship.findById(internshipId);
     if (!internship) {
@@ -27,7 +29,7 @@ exports.checkCertificateEligibility = async (req, res) => {
     }
 
     const purchase = await Purchase.findOne({
-      userId: req.user.id,
+      userId,
       internshipId,
       paymentStatus: "paid",
     });
@@ -40,51 +42,56 @@ exports.checkCertificateEligibility = async (req, res) => {
     }
 
     let progress = await Progress.findOne({
-      userId: req.user.id,
-      internshipId,
+      user: userId,
+      internship: internshipId,
     });
 
     if (!progress) {
-      progress = await Progress.create({
-        userId: req.user.id,
-        internshipId,
-        completedModules: [],
-        progressPercent: 0,
-        certificateEligible: false,
-        testPassed: false,
-        finalEligible: false,
+      return res.status(200).json({
+        success: true,
+        eligible: false,
+        progress: {
+          overallProgress: 0,
+          miniTestPassed: false,
+          durationCompleted: false,
+          certificateEligible: false,
+        },
+        certificate: null,
       });
     }
 
     const existingTestResult = await TestResult.findOne({
-      userId: req.user.id,
-      internshipId,
-    });
+      user: userId,
+      internship: internshipId,
+    }).sort({ createdAt: -1 });
 
-    const progressPercent = progress.progressPercent || 0;
-    const testPassed = !!progress.testPassed || !!existingTestResult?.passed;
-    const certificateEligible = progressPercent >= 80;
-    const finalEligible = certificateEligible && testPassed;
+    if (existingTestResult?.passed && !progress.miniTestPassed) {
+      progress.miniTestPassed = true;
+    }
 
-    progress.testPassed = testPassed;
-    progress.certificateEligible = certificateEligible;
-    progress.finalEligible = finalEligible;
+    const requiredProgress = internship.requiredProgress || 80;
+
+    progress.certificateEligible =
+      progress.overallProgress >= requiredProgress &&
+      progress.miniTestPassed &&
+      progress.durationCompleted;
+
     await progress.save();
 
     const existingCertificate = await Certificate.findOne({
       internshipId,
-      userId: req.user.id,
+      userId,
       status: "issued",
     });
 
     return res.status(200).json({
       success: true,
-      eligible: finalEligible,
+      eligible: progress.certificateEligible,
       progress: {
-        progressPercent,
-        testPassed,
-        certificateEligible,
-        finalEligible,
+        overallProgress: progress.overallProgress || 0,
+        miniTestPassed: progress.miniTestPassed || false,
+        durationCompleted: progress.durationCompleted || false,
+        certificateEligible: progress.certificateEligible || false,
       },
       certificate: existingCertificate || null,
     });
@@ -100,9 +107,10 @@ exports.checkCertificateEligibility = async (req, res) => {
 exports.generateCertificate = async (req, res) => {
   try {
     const { internshipId } = req.params;
+    const userId = req.user.id || req.user._id;
 
     const purchase = await Purchase.findOne({
-      userId: req.user.id,
+      userId,
       internshipId,
       paymentStatus: "paid",
     });
@@ -114,9 +122,17 @@ exports.generateCertificate = async (req, res) => {
       });
     }
 
+    const internship = await Internship.findById(internshipId);
+    if (!internship) {
+      return res.status(404).json({
+        success: false,
+        message: "Internship not found",
+      });
+    }
+
     let progress = await Progress.findOne({
-      userId: req.user.id,
-      internshipId,
+      user: userId,
+      internship: internshipId,
     });
 
     if (!progress) {
@@ -127,20 +143,24 @@ exports.generateCertificate = async (req, res) => {
     }
 
     const existingTestResult = await TestResult.findOne({
-      userId: req.user.id,
-      internshipId,
-    });
+      user: userId,
+      internship: internshipId,
+    }).sort({ createdAt: -1 });
 
-    const certificateEligible = (progress.progressPercent || 0) >= 80;
-    const testPassed = !!progress.testPassed || !!existingTestResult?.passed;
-    const finalEligible = certificateEligible && testPassed;
+    if (existingTestResult?.passed && !progress.miniTestPassed) {
+      progress.miniTestPassed = true;
+    }
 
-    progress.testPassed = testPassed;
-    progress.certificateEligible = certificateEligible;
-    progress.finalEligible = finalEligible;
+    const requiredProgress = internship.requiredProgress || 80;
+
+    progress.certificateEligible =
+      progress.overallProgress >= requiredProgress &&
+      progress.miniTestPassed &&
+      progress.durationCompleted;
+
     await progress.save();
 
-    if (!finalEligible) {
+    if (!progress.certificateEligible) {
       return res.status(403).json({
         success: false,
         message: "You are not eligible for certificate yet",
@@ -148,13 +168,13 @@ exports.generateCertificate = async (req, res) => {
     }
 
     let certificate = await Certificate.findOne({
-      userId: req.user.id,
+      userId,
       internshipId,
     });
 
     if (!certificate) {
       certificate = await Certificate.create({
-        userId: req.user.id,
+        userId,
         internshipId,
         purchaseId: purchase._id,
         certificateId: generateCertificateId(),
@@ -178,6 +198,7 @@ exports.generateCertificate = async (req, res) => {
 exports.downloadCertificate = async (req, res) => {
   try {
     const { certificateId } = req.params;
+    const userId = req.user.id || req.user._id;
 
     const certificate = await Certificate.findOne({
       certificateId,
@@ -191,7 +212,7 @@ exports.downloadCertificate = async (req, res) => {
       });
     }
 
-    if (certificate.userId.toString() !== req.user.id) {
+    if (certificate.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to download this certificate",
@@ -351,9 +372,7 @@ exports.downloadCertificate = async (req, res) => {
         .bezierCurveTo(4, -6, 10, -6, 18, 0)
         .stroke();
 
-      doc
-        .circle(0, 0, 2.2)
-        .fillAndStroke("#B7892E", "#B7892E");
+      doc.circle(0, 0, 2.2).fillAndStroke("#B7892E", "#B7892E");
 
       doc.restore();
     };
@@ -537,10 +556,12 @@ exports.downloadCertificate = async (req, res) => {
         });
     }
 
-const FRONTEND_URL =
-  process.env.REACT_APP_FRONTEND_URL || "http://localhost:3000";
+    const verifyBaseUrl =
+      process.env.CLIENT_URL ||
+      process.env.REACT_APP_FRONTEND_URL ||
+      "http://localhost:3000";
 
-const verifyUrl = `${process.env.CLIENT_URL}/verify/${certificate.certificateId}`;
+    const verifyUrl = `${verifyBaseUrl}/verify/${certificate.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl);
     const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
     const qrBuffer = Buffer.from(qrBase64, "base64");
@@ -617,4 +638,4 @@ exports.verifyCertificate = async (req, res) => {
       message: "Failed to verify certificate",
     });
   }
-};                                                              
+};
