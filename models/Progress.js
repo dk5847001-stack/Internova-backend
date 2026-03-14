@@ -1,34 +1,115 @@
 const mongoose = require("mongoose");
 
+const videoProgressSchema = new mongoose.Schema(
+  {
+    moduleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+    videoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+    watchedPercent: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    completed: {
+      type: Boolean,
+      default: false,
+    },
+    lastWatchedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const progressSchema = new mongoose.Schema(
   {
-    userId: {
+    user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
-    internshipId: {
+    internship: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Internship",
       required: true,
+      index: true,
     },
-    completedModules: {
-      type: [Number],
-      default: [],
+    purchase: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Purchase",
+      default: null,
     },
-    progressPercent: {
+
+    enrolledAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    selectedDurationDays: {
+      type: Number,
+      default: 30,
+    },
+
+    unlockAllPurchased: {
+      type: Boolean,
+      default: false,
+    },
+
+    videoProgress: [videoProgressSchema],
+
+    overallProgress: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+
+    completedVideos: {
       type: Number,
       default: 0,
     },
+    totalVideos: {
+      type: Number,
+      default: 0,
+    },
+
+    completedModules: {
+      type: Number,
+      default: 0,
+    },
+    totalModules: {
+      type: Number,
+      default: 0,
+    },
+
+    completedDays: {
+      type: Number,
+      default: 0,
+    },
+
+    durationCompleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    miniTestUnlocked: {
+      type: Boolean,
+      default: false,
+    },
+    miniTestPassed: {
+      type: Boolean,
+      default: false,
+    },
+
     certificateEligible: {
-      type: Boolean,
-      default: false,
-    },
-    testPassed: {
-      type: Boolean,
-      default: false,
-    },
-    finalEligible: {
       type: Boolean,
       default: false,
     },
@@ -36,7 +117,6 @@ const progressSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-progressSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
+progressSchema.index({ user: 1, internship: 1 }, { unique: true });
 
-module.exports =
-  mongoose.models.Progress || mongoose.model("Progress", progressSchema);
+module.exports = mongoose.model("Progress", progressSchema);
