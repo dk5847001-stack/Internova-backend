@@ -1,64 +1,5 @@
 const Internship = require("../models/Internship");
 
-// helpers
-const cleanDurations = (durations = []) => {
-  if (!Array.isArray(durations)) return [];
-
-  return durations
-    .filter((d) => d && String(d.label || "").trim())
-    .map((d, index) => ({
-      label: String(d.label || "").trim(),
-      price: Number(d.price || 0),
-      durationDays:
-        Number(d.durationDays || 0) > 0 ? Number(d.durationDays) : 30,
-      order: Number(d.order ?? index + 1),
-    }));
-};
-
-const cleanModules = (modules = []) => {
-  if (!Array.isArray(modules)) return [];
-
-  return modules
-    .filter((m) => m && String(m.title || "").trim())
-    .map((m, moduleIndex) => ({
-      title: String(m.title || "").trim(),
-      description: String(m.description || "").trim(),
-      unlockDay:
-        Number(m.unlockDay || 0) > 0 ? Number(m.unlockDay) : moduleIndex + 1,
-      order: Number(m.order ?? moduleIndex + 1),
-      videos: Array.isArray(m.videos)
-        ? m.videos
-            .filter((v) => v && String(v.title || "").trim() && String(v.videoUrl || "").trim())
-            .map((v, videoIndex) => ({
-              title: String(v.title || "").trim(),
-              description: String(v.description || "").trim(),
-              videoUrl: String(v.videoUrl || "").trim(),
-              duration: String(v.duration || "").trim(),
-              order: Number(v.order ?? videoIndex + 1),
-            }))
-        : [],
-    }));
-};
-
-const cleanQuiz = (quiz = []) => {
-  if (!Array.isArray(quiz)) return [];
-
-  return quiz
-    .filter(
-      (q) =>
-        q &&
-        String(q.question || "").trim() &&
-        Array.isArray(q.options) &&
-        q.options.length === 4 &&
-        q.options.every((opt) => String(opt || "").trim() !== "")
-    )
-    .map((q) => ({
-      question: String(q.question || "").trim(),
-      options: q.options.map((opt) => String(opt || "").trim()),
-      correctAnswer: Math.max(0, Math.min(3, Number(q.correctAnswer || 0))),
-    }));
-};
-
 // GET all internships
 exports.getAllInternships = async (req, res) => {
   try {
@@ -99,6 +40,72 @@ exports.getAllInternshipsAdmin = async (req, res) => {
   }
 };
 
+// GET admin dashboard stats
+exports.getAdminInternshipStats = async (req, res) => {
+  try {
+    const internships = await Internship.find().sort({ createdAt: -1 });
+
+    const totalPrograms = internships.length;
+    const activePrograms = internships.filter((item) => item.isActive).length;
+    const inactivePrograms = totalPrograms - activePrograms;
+
+    const totalModules = internships.reduce(
+      (sum, item) => sum + (item.modules?.length || 0),
+      0
+    );
+
+    const totalVideos = internships.reduce(
+      (sum, item) =>
+        sum +
+        (item.modules || []).reduce(
+          (moduleSum, module) => moduleSum + (module.videos?.length || 0),
+          0
+        ),
+      0
+    );
+
+    const totalQuizQuestions = internships.reduce(
+      (sum, item) => sum + (item.quiz?.length || 0),
+      0
+    );
+
+    const recentInternships = internships.slice(0, 6).map((item) => ({
+      _id: item._id,
+      title: item.title,
+      branch: item.branch,
+      category: item.category,
+      isActive: item.isActive,
+      modulesCount: item.modules?.length || 0,
+      videosCount: (item.modules || []).reduce(
+        (sum, module) => sum + (module.videos?.length || 0),
+        0
+      ),
+      quizCount: item.quiz?.length || 0,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalPrograms,
+        activePrograms,
+        inactivePrograms,
+        totalModules,
+        totalVideos,
+        totalQuizQuestions,
+      },
+      recentInternships,
+    });
+  } catch (error) {
+    console.error("GET ADMIN STATS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin dashboard stats",
+    });
+  }
+};
+
 // GET single internship
 exports.getSingleInternship = async (req, res) => {
   try {
@@ -129,12 +136,12 @@ exports.createInternship = async (req, res) => {
   try {
     const {
       title,
+      slug,
       branch,
       category,
       description,
       thumbnail,
       image,
-      slug,
       durations,
       modules,
       quiz,
@@ -146,37 +153,71 @@ exports.createInternship = async (req, res) => {
       isActive,
     } = req.body;
 
-    if (!title || !branch || !description) {
+    if (!title || !branch || !description || !durations?.length) {
       return res.status(400).json({
         success: false,
-        message: "Title, branch and description are required",
+        message: "Title, branch, description and durations are required",
       });
     }
 
-    const cleanedDurations = cleanDurations(durations);
-    if (!cleanedDurations.length) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one valid duration is required",
-      });
-    }
+    const cleanedDurations = Array.isArray(durations)
+      ? durations
+          .filter((d) => d.label && d.label.trim())
+          .map((d, index) => ({
+            label: d.label.trim(),
+            price: Number(d.price || 0),
+            durationDays: Number(d.durationDays || 30),
+            order: Number(d.order || index + 1),
+          }))
+      : [];
 
-    const cleanedModules = cleanModules(modules);
-    const cleanedQuiz = cleanQuiz(quiz);
+    const cleanedModules = Array.isArray(modules)
+      ? modules
+          .filter((m) => m.title && m.title.trim())
+          .map((m, index) => ({
+            title: m.title.trim(),
+            description: m.description?.trim() || "",
+            unlockDay: Number(m.unlockDay || index + 1),
+            order: Number(m.order || index + 1),
+            videos: Array.isArray(m.videos)
+              ? m.videos
+                  .filter((v) => v.title && v.title.trim() && v.videoUrl && v.videoUrl.trim())
+                  .map((v, vIndex) => ({
+                    title: v.title.trim(),
+                    description: v.description?.trim() || "",
+                    videoUrl: v.videoUrl.trim(),
+                    duration: v.duration?.trim() || "",
+                    order: Number(v.order || vIndex + 1),
+                  }))
+              : [],
+          }))
+      : [];
 
-    const primaryDuration = cleanedDurations[0];
+    const cleanedQuiz = Array.isArray(quiz)
+      ? quiz
+          .filter(
+            (q) =>
+              q.question &&
+              q.question.trim() &&
+              Array.isArray(q.options) &&
+              q.options.length === 4 &&
+              q.options.every((opt) => String(opt).trim() !== "")
+          )
+          .map((q) => ({
+            question: q.question.trim(),
+            options: q.options.map((opt) => String(opt).trim()),
+            correctAnswer: Number(q.correctAnswer),
+          }))
+      : [];
 
     const internship = await Internship.create({
-      title: String(title).trim(),
-      slug: String(slug || "").trim(),
-      branch: String(branch).trim(),
-      category: String(category || "").trim(),
-      description: String(description).trim(),
-      thumbnail: String(thumbnail || "").trim(),
-      image: String(image || "").trim(),
-      duration: primaryDuration.label,
-      durationDays: primaryDuration.durationDays,
-      price: primaryDuration.price,
+      title,
+      slug: slug?.trim() || "",
+      branch,
+      category,
+      description,
+      thumbnail,
+      image,
       durations: cleanedDurations,
       modules: cleanedModules,
       quiz: cleanedQuiz,
@@ -217,12 +258,12 @@ exports.updateInternship = async (req, res) => {
 
     const {
       title,
+      slug,
       branch,
       category,
       description,
       thumbnail,
       image,
-      slug,
       durations,
       modules,
       quiz,
@@ -234,39 +275,66 @@ exports.updateInternship = async (req, res) => {
       isActive,
     } = req.body;
 
-    const cleanedDurations = cleanDurations(durations);
-    const cleanedModules = cleanModules(modules);
-    const cleanedQuiz = cleanQuiz(quiz);
-
-    const primaryDuration =
-      cleanedDurations[0] ||
-      internship.durations?.[0] || {
-        label: internship.duration || "1 Month",
-        price: internship.price || 0,
-        durationDays: internship.durationDays || 30,
-      };
-
-    internship.title = String(title || internship.title).trim();
-    internship.slug = String(slug || internship.slug || "").trim();
-    internship.branch = String(branch || internship.branch).trim();
-    internship.category = String(category || internship.category || "").trim();
-    internship.description = String(
-      description || internship.description
-    ).trim();
-    internship.thumbnail = String(thumbnail || internship.thumbnail || "").trim();
-    internship.image = String(image || internship.image || "").trim();
-
-    internship.duration = primaryDuration.label;
-    internship.durationDays = Number(primaryDuration.durationDays || 30);
-    internship.price = Number(primaryDuration.price || 0);
-
-    internship.durations = cleanedDurations.length
-      ? cleanedDurations
+    const cleanedDurations = Array.isArray(durations)
+      ? durations
+          .filter((d) => d.label && d.label.trim())
+          .map((d, index) => ({
+            label: d.label.trim(),
+            price: Number(d.price || 0),
+            durationDays: Number(d.durationDays || 30),
+            order: Number(d.order || index + 1),
+          }))
       : internship.durations;
 
+    const cleanedModules = Array.isArray(modules)
+      ? modules
+          .filter((m) => m.title && m.title.trim())
+          .map((m, index) => ({
+            title: m.title.trim(),
+            description: m.description?.trim() || "",
+            unlockDay: Number(m.unlockDay || index + 1),
+            order: Number(m.order || index + 1),
+            videos: Array.isArray(m.videos)
+              ? m.videos
+                  .filter((v) => v.title && v.title.trim() && v.videoUrl && v.videoUrl.trim())
+                  .map((v, vIndex) => ({
+                    title: v.title.trim(),
+                    description: v.description?.trim() || "",
+                    videoUrl: v.videoUrl.trim(),
+                    duration: v.duration?.trim() || "",
+                    order: Number(v.order || vIndex + 1),
+                  }))
+              : [],
+          }))
+      : internship.modules;
+
+    const cleanedQuiz = Array.isArray(quiz)
+      ? quiz
+          .filter(
+            (q) =>
+              q.question &&
+              q.question.trim() &&
+              Array.isArray(q.options) &&
+              q.options.length === 4 &&
+              q.options.every((opt) => String(opt).trim() !== "")
+          )
+          .map((q) => ({
+            question: q.question.trim(),
+            options: q.options.map((opt) => String(opt).trim()),
+            correctAnswer: Number(q.correctAnswer),
+          }))
+      : internship.quiz;
+
+    internship.title = title;
+    internship.slug = slug?.trim() || "";
+    internship.branch = branch;
+    internship.category = category;
+    internship.description = description;
+    internship.thumbnail = thumbnail;
+    internship.image = image;
+    internship.durations = cleanedDurations;
     internship.modules = cleanedModules;
     internship.quiz = cleanedQuiz;
-
     internship.requiredProgress = Number(requiredProgress || 80);
     internship.miniTestUnlockProgress = Number(miniTestUnlockProgress || 80);
     internship.miniTestPassMarks = Number(miniTestPassMarks || 60);
