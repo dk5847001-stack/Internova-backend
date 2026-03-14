@@ -42,8 +42,8 @@ exports.checkCertificateEligibility = async (req, res) => {
     }
 
     let progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId,
+      internshipId,
     });
 
     if (!progress) {
@@ -61,8 +61,8 @@ exports.checkCertificateEligibility = async (req, res) => {
     }
 
     const existingTestResult = await TestResult.findOne({
-      user: userId,
-      internship: internshipId,
+      userId,
+      internshipId,
     }).sort({ createdAt: -1 });
 
     if (existingTestResult?.passed && !progress.miniTestPassed) {
@@ -131,8 +131,8 @@ exports.generateCertificate = async (req, res) => {
     }
 
     let progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId,
+      internshipId,
     });
 
     if (!progress) {
@@ -143,8 +143,8 @@ exports.generateCertificate = async (req, res) => {
     }
 
     const existingTestResult = await TestResult.findOne({
-      user: userId,
-      internship: internshipId,
+      userId,
+      internshipId,
     }).sort({ createdAt: -1 });
 
     if (existingTestResult?.passed && !progress.miniTestPassed) {
@@ -240,7 +240,7 @@ exports.downloadCertificate = async (req, res) => {
       },
     });
 
-    const safeName = (user.name || "candidate").replace(/[^a-z0-9]/gi, "_");
+    const safeName = (user?.name || "candidate").replace(/[^a-z0-9]/gi, "_");
     const fileName = `${safeName}_certificate.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
@@ -434,7 +434,7 @@ exports.downloadCertificate = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(31)
       .fillColor(colors.navy)
-      .text(user.name, left, 182, {
+      .text(user?.name || "Candidate", left, 182, {
         width: contentWidth,
         align: "center",
       });
@@ -444,7 +444,7 @@ exports.downloadCertificate = async (req, res) => {
       .fontSize(15.5)
       .fillColor(colors.text)
       .text(
-        `has successfully completed the ${internship.title}`,
+        `has successfully completed the ${internship?.title || "Internship Program"}`,
         left,
         238,
         {
@@ -458,7 +458,9 @@ exports.downloadCertificate = async (req, res) => {
       .fontSize(14.5)
       .fillColor(colors.text)
       .text(
-        `under the ${internship.branch} stream for a duration of ${purchase.durationLabel}.`,
+        `under the ${internship?.branch || "General"} stream for a duration of ${
+          purchase?.durationLabel || "the selected period"
+        }.`,
         left,
         268,
         {

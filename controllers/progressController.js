@@ -30,7 +30,8 @@ const calculateProgressStats = (internship, progressDoc) => {
     return moduleVideos.every((video) =>
       progressDoc.videoProgress.some(
         (vp) =>
-          vp.videoId.toString() === video._id.toString() && vp.completed === true
+          vp.videoId.toString() === video._id.toString() &&
+          vp.completed === true
       )
     );
   }).length;
@@ -69,7 +70,8 @@ const getUnlockedModules = (internship, progressDoc) => {
   return (internship.modules || []).map((module) => ({
     ...module.toObject(),
     isUnlocked:
-      progressDoc.unlockAllPurchased || completedDays >= (module.unlockDay || 1),
+      progressDoc.unlockAllPurchased ||
+      completedDays >= (module.unlockDay || 1),
   }));
 };
 
@@ -103,19 +105,19 @@ exports.getCourseProgress = async (req, res) => {
     }
 
     let progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     });
 
     if (!progress) {
       progress = await Progress.create({
-        user: userId,
-        internship: internshipId,
-        purchase: purchase._id,
+        userId: userId,
+        internshipId: internshipId,
+        purchaseId: purchase._id,
         enrolledAt: purchase.createdAt || new Date(),
         selectedDurationDays: internship.durationDays || 30,
-        totalModules: internship.modules.length,
-        totalVideos: internship.modules.reduce(
+        totalModules: internship.modules?.length || 0,
+        totalVideos: (internship.modules || []).reduce(
           (sum, module) => sum + (module.videos?.length || 0),
           0
         ),
@@ -123,8 +125,8 @@ exports.getCourseProgress = async (req, res) => {
     }
 
     const latestTest = await TestResult.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     }).sort({ createdAt: -1 });
 
     if (latestTest?.passed && !progress.miniTestPassed) {
@@ -217,8 +219,8 @@ exports.updateVideoProgress = async (req, res) => {
     }
 
     const progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     });
 
     if (!progress) {
@@ -255,8 +257,8 @@ exports.updateVideoProgress = async (req, res) => {
     }
 
     const latestTest = await TestResult.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     }).sort({ createdAt: -1 });
 
     progress.miniTestPassed = latestTest?.passed || progress.miniTestPassed;
@@ -309,8 +311,8 @@ exports.unlockAllModules = async (req, res) => {
     const userId = req.user.id || req.user._id;
 
     const progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     });
 
     if (!progress) {
@@ -347,8 +349,8 @@ exports.getEligibilityStatus = async (req, res) => {
 
     const internship = await Internship.findById(internshipId);
     const progress = await Progress.findOne({
-      user: userId,
-      internship: internshipId,
+      userId: userId,
+      internshipId: internshipId,
     });
 
     if (!internship || !progress) {

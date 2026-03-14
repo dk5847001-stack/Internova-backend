@@ -30,19 +30,19 @@ const videoProgressSchema = new mongoose.Schema(
 
 const progressSchema = new mongoose.Schema(
   {
-    user: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       index: true,
     },
-    internship: {
+    internshipId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Internship",
       required: true,
       index: true,
     },
-    purchase: {
+    purchaseId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Purchase",
       default: null,
@@ -117,6 +117,7 @@ const progressSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-progressSchema.index({ user: 1, internship: 1 }, { unique: true });
+progressSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
 
-module.exports = mongoose.model("Progress", progressSchema);
+module.exports =
+  mongoose.models.Progress || mongoose.model("Progress", progressSchema);
