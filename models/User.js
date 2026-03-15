@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       lowercase: true,
+      index: true,
     },
     password: {
       type: String,
@@ -23,9 +24,32 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "admin"],
       default: "user",
+      index: true,
+    },
+
+    // Admin analytics ke liye useful
+    lastLoginAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+
+    avatar: {
+      type: String,
+      default: "",
+      trim: true,
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("User", userSchema);
+userSchema.index({ createdAt: -1 });
+userSchema.index({ role: 1, createdAt: -1 });
+
+module.exports = mongoose.models.User || mongoose.model("User", userSchema);

@@ -1,4 +1,9 @@
 const Internship = require("../models/Internship");
+const User = require("../models/User");
+const Purchase = require("../models/Purchase");
+const Certificate = require("../models/Certificate");
+const TestResult = require("../models/TestResult");
+const Progress = require("../models/Progress");
 const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
 
 const toNumber = (value, fallback = 0) => {
@@ -146,7 +151,26 @@ exports.getAllInternshipsAdmin = async (req, res) => {
 // GET admin dashboard stats
 exports.getAdminInternshipStats = async (req, res) => {
   try {
-    const internships = await Internship.find().sort({ createdAt: -1 });
+    const [
+      internships,
+      users,
+      purchases,
+      certificates,
+      passedResults,
+      progresses,
+    ] = await Promise.all([
+      Internship.find().sort({ createdAt: -1 }),
+      User.find().select("name email role createdAt lastLoginAt isActive").sort({ createdAt: -1 }),
+      Purchase.find()
+        .populate("userId", "name email role lastLoginAt isActive createdAt")
+        .populate("internshipId", "title branch category")
+        .sort({ createdAt: -1 }),
+      Certificate.find({ status: "issued" }).select("userId internshipId certificateId issuedAt status"),
+      TestResult.find({ passed: true }).select("userId internshipId percentage passed submittedAt"),
+      Progress.find().select(
+        "userId internshipId overallProgress miniTestPassed certificateEligible completedDays durationCompleted unlockAllPurchased updatedAt"
+      ),
+    ]);
 
     const totalPrograms = internships.length;
     const activePrograms = internships.filter((item) => item.isActive).length;
@@ -172,6 +196,56 @@ exports.getAdminInternshipStats = async (req, res) => {
       0
     );
 
+    const totalUsers = users.length;
+    const totalAdmins = users.filter((user) => user.role === "admin").length;
+    const totalNormalUsers = totalUsers - totalAdmins;
+    const activeUsers = users.filter((user) => user.isActive !== false).length;
+    const recentlyLoggedInUsers = users.filter((user) => !!user.lastLoginAt).length;
+
+    const totalPurchases = purchases.length;
+    const paidPurchases = purchases.filter(
+      (purchase) => purchase.paymentStatus === "paid"
+    ).length;
+    const failedPurchases = purchases.filter(
+      (purchase) => purchase.paymentStatus === "failed"
+    ).length;
+
+    const totalCertificatesIssued = certificates.length;
+    const totalQuizPassed = passedResults.length;
+
+    const progressMap = new Map(
+      progresses.map((progress) => [
+        `${String(progress.userId)}_${String(progress.internshipId)}`,
+        progress,
+      ])
+    );
+
+    const certificateMap = new Map(
+      certificates.map((certificate) => [
+        `${String(certificate.userId)}_${String(certificate.internshipId)}`,
+        certificate,
+      ])
+    );
+
+    const passedQuizMap = new Map(
+      passedResults.map((result) => [
+        `${String(result.userId)}_${String(result.internshipId)}`,
+        result,
+      ])
+    );
+
+    const purchaseCountByUser = purchases.reduce((acc, purchase) => {
+      const userId = String(purchase.userId?._id || purchase.userId);
+      acc[userId] = (acc[userId] || 0) + 1;
+      return acc;
+    }, {});
+
+    const certificateCountByUser = certificates.reduce((acc, certificate) => {
+      const userId = String(certificate.userId);
+      acc[userId] = (acc[userId] || 0) + 1;
+      return acc;
+    }, {});
+
     const recentInternships = internships.slice(0, 6).map((item) => ({
       _id: item._id,
       title: item.title,
@@ -188,6 +262,74 @@ exports.getAdminInternshipStats = async (req, res) => {
       updatedAt: item.updatedAt,
     }));
 
+    const recentUsers = users.slice(0, 8).map((user) => ({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: typeof user.isActive === "boolean" ? user.isActive : true,
+      lastLoginAt: user.lastLoginAt || null,
+      createdAt: user.createdAt,
+      purchasesCount: purchaseCountByUser[String(user._id)] || 0,
+      certificatesCount: certificateCountByUser[String(user._id)] || 0,
+    }));
+
+    const recentPurchases = purchases.slice(0, 10).map((purchase) => {
+      const userId = String(purchase.userId?._id || "");
+      const internshipId = String(purchase.internshipId?._id || "");
+      const joinKey = `${userId}_${internshipId}`;
+
+      const progress = progressMap.get(joinKey);
+      const certificate = certificateMap.get(joinKey);
+      const passedQuiz = passedQuizMap.get(joinKey);
+
+      return {
+        _id: purchase._id,
+        user: {
+          _id: purchase.userId?._id || null,
+          name: purchase.userId?.name || "Unknown User",
+          email: purchase.userId?.email || "",
+          role: purchase.userId?.role || "user",
+          lastLoginAt: purchase.userId?.lastLoginAt || null,
+          isActive:
+            typeof purchase.userId?.isActive === "boolean"
+              ? purchase.userId.isActive
+              : true,
+        },
+        internship: {
+          _id: purchase.internshipId?._id || null,
+          title: purchase.internshipId?.title || "Unknown Internship",
+          branch: purchase.internshipId?.branch || "",
+          category: purchase.internshipId?.category || "",
+        },
+        durationLabel: purchase.durationLabel || "",
+        selectedDurationDays: purchase.selectedDurationDays || 0,
+        amount: purchase.amount || 0,
+        paymentStatus: purchase.paymentStatus || "created",
+        createdAt: purchase.createdAt,
+        progress: {
+          overallProgress: progress?.overallProgress || 0,
+          miniTestPassed: !!progress?.miniTestPassed,
+          certificateEligible: !!progress?.certificateEligible,
+          durationCompleted: !!progress?.durationCompleted,
+          completedDays: progress?.completedDays || 0,
+          unlockAllPurchased: !!progress?.unlockAllPurchased,
+        },
+        certificate: certificate
+          ? {
+              certificateId: certificate.certificateId,
+              issuedAt: certificate.issuedAt,
+              status: certificate.status,
+            }
+          : null,
+        quiz: {
+          passed: !!passedQuiz?.passed || !!progress?.miniTestPassed,
+          percentage: passedQuiz?.percentage || 0,
+          submittedAt: passedQuiz?.submittedAt || null,
+        },
+      };
+    });
+
     return res.status(200).json({
       success: true,
       stats: {
@@ -197,8 +339,20 @@ exports.getAdminInternshipStats = async (req, res) => {
         totalModules,
         totalVideos,
         totalQuizQuestions,
+        totalUsers,
+        totalAdmins,
+        totalNormalUsers,
+        activeUsers,
+        recentlyLoggedInUsers,
+        totalPurchases,
+        paidPurchases,
+        failedPurchases,
+        totalCertificatesIssued,
+        totalQuizPassed,
       },
       recentInternships,
+      recentUsers,
+      recentPurchases,
     });
   } catch (error) {
     console.error("GET ADMIN STATS ERROR:", error);
