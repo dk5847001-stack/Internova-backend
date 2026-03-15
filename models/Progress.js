@@ -132,7 +132,7 @@ progressSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
 progressSchema.index({ userId: 1, purchaseId: 1 });
 progressSchema.index({ internshipId: 1, updatedAt: -1 });
 
-progressSchema.pre("save", function (next) {
+progressSchema.pre("save", function () {
   if (!Array.isArray(this.videoProgress)) {
     this.videoProgress = [];
   }
@@ -165,8 +165,6 @@ progressSchema.pre("save", function (next) {
   this.completedModules = Math.max(0, Number(this.completedModules || 0));
   this.totalModules = Math.max(0, Number(this.totalModules || 0));
   this.completedDays = Math.max(0, Number(this.completedDays || 0));
-
-  next();
 });
 
 module.exports =
