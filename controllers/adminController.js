@@ -439,3 +439,193 @@ exports.getAdminPurchases = async (req, res) => {
     });
   }
 };
+
+// PATCH /api/admin/users/:userId/status
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isActive must be true or false",
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      "name email role isActive createdAt lastLoginAt"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.isActive = isActive;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${isActive ? "activated" : "deactivated"} successfully`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("UPDATE USER STATUS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update user status",
+    });
+  }
+};
+
+// PATCH /api/admin/purchases/:purchaseId/status
+exports.updatePurchaseStatus = async (req, res) => {
+  try {
+    const { purchaseId } = req.params;
+    const { paymentStatus } = req.body;
+
+    const allowedStatuses = ["created", "paid", "failed"];
+
+    if (!allowedStatuses.includes(String(paymentStatus))) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid paymentStatus value",
+      });
+    }
+
+    const purchase = await Purchase.findById(purchaseId)
+      .populate("userId", "name email role lastLoginAt isActive createdAt")
+      .populate("internshipId", "title branch category");
+
+    if (!purchase) {
+      return res.status(404).json({
+        success: false,
+        message: "Purchase not found",
+      });
+    }
+
+    purchase.paymentStatus = paymentStatus;
+    await purchase.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Purchase marked as ${paymentStatus}`,
+      purchase: {
+        _id: purchase._id,
+        paymentStatus: purchase.paymentStatus,
+        amount: purchase.amount,
+        durationLabel: purchase.durationLabel,
+        createdAt: purchase.createdAt,
+        user: purchase.userId
+          ? {
+              _id: purchase.userId._id,
+              name: purchase.userId.name,
+              email: purchase.userId.email,
+            }
+          : null,
+        internship: purchase.internshipId
+          ? {
+              _id: purchase.internshipId._id,
+              title: purchase.internshipId.title,
+              branch: purchase.internshipId.branch,
+              category: purchase.internshipId.category,
+            }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("UPDATE PURCHASE STATUS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update purchase status",
+    });
+  }
+};
+
+// POST /api/admin/certificates/:purchaseId/resend
+exports.resendCertificateFromPurchase = async (req, res) => {
+  try {
+    const { purchaseId } = req.params;
+
+    const purchase = await Purchase.findById(purchaseId)
+      .populate("userId", "name email")
+      .populate("internshipId", "title branch category certificateEnabled");
+
+    if (!purchase) {
+      return res.status(404).json({
+        success: false,
+        message: "Purchase not found",
+      });
+    }
+
+    const userId = purchase.userId?._id;
+    const internshipId = purchase.internshipId?._id;
+
+    if (!userId || !internshipId) {
+      return res.status(400).json({
+        success: false,
+        message: "Purchase user or internship data is missing",
+      });
+    }
+
+    const progress = await Progress.findOne({ userId, internshipId });
+
+    if (!progress) {
+      return res.status(404).json({
+        success: false,
+        message: "Progress record not found for this purchase",
+      });
+    }
+
+    let certificate = await Certificate.findOne({
+      userId,
+      internshipId,
+      status: "issued",
+    });
+
+    if (!certificate) {
+      return res.status(404).json({
+        success: false,
+        message: "Issued certificate not found for this purchase",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Certificate record found successfully",
+      certificate: {
+        _id: certificate._id,
+        certificateId: certificate.certificateId,
+        issuedAt: certificate.issuedAt,
+        status: certificate.status,
+      },
+      user: {
+        name: purchase.userId?.name || "",
+        email: purchase.userId?.email || "",
+      },
+      internship: {
+        title: purchase.internshipId?.title || "",
+        branch: purchase.internshipId?.branch || "",
+        category: purchase.internshipId?.category || "",
+      },
+      downloadUrl: `/api/certificates/${certificate.certificateId}/download`,
+    });
+  } catch (error) {
+    console.error("RESEND CERTIFICATE FROM PURCHASE ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch certificate for resend",
+    });
+  }
+};
