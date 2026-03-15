@@ -45,7 +45,7 @@ certificateSchema.index({ userId: 1, internshipId: 1 }, { unique: true });
 certificateSchema.index({ internshipId: 1, status: 1 });
 certificateSchema.index({ certificateId: 1, status: 1 });
 
-certificateSchema.pre("save", function (next) {
+certificateSchema.pre("save", function () {
   if (typeof this.certificateId === "string") {
     this.certificateId = this.certificateId.trim();
   }
@@ -53,8 +53,6 @@ certificateSchema.pre("save", function (next) {
   if (!this.issuedAt) {
     this.issuedAt = new Date();
   }
-
-  next();
 });
 
 module.exports =
