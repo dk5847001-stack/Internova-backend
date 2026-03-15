@@ -18,7 +18,15 @@ const certificateRoutes = require("./routes/certificateRoutes");
 
 const app = express();
 
+/* =========================
+   Database
+========================= */
 connectDB();
+
+/* =========================
+   Trust Proxy
+========================= */
+app.set("trust proxy", 1);
 
 /* =========================
    Allowed Frontend Origins
@@ -28,30 +36,48 @@ const allowedOrigins = [
   "https://internova-frontend.onrender.com",
 ];
 
-if (process.env.CLIENT_URL && !allowedOrigins.includes(process.env.CLIENT_URL)) {
+if (
+  process.env.CLIENT_URL &&
+  !allowedOrigins.includes(process.env.CLIENT_URL)
+) {
   allowedOrigins.push(process.env.CLIENT_URL);
 }
 
 /* =========================
-   Middlewares
+   Security Middlewares
 ========================= */
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
+/* =========================
+   CORS
+========================= */
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+/* =========================
+   Body Parsers
+========================= */
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+
+/* =========================
+   Logger
+========================= */
 app.use(morgan("dev"));
 
 /* =========================
@@ -60,7 +86,7 @@ app.use(morgan("dev"));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* =========================
-   Health / Root
+   Root / Health
 ========================= */
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -71,11 +97,12 @@ app.get("/api/health", (req, res) => {
     success: true,
     message: "Backend is working fine",
     allowedOrigins,
+    environment: process.env.NODE_ENV || "development",
   });
 });
 
 /* =========================
-   Routes
+   API Routes
 ========================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/internships", internshipRoutes);
@@ -99,7 +126,7 @@ app.use((req, res) => {
    Global Error Handler
 ========================= */
 app.use((err, req, res, next) => {
-  console.error("❌ Server Error:", err.message);
+  console.error("❌ Server Error:", err);
 
   if (err.message && err.message.startsWith("CORS blocked")) {
     return res.status(403).json({
@@ -108,9 +135,9 @@ app.use((err, req, res, next) => {
     });
   }
 
-  res.status(500).json({
+  res.status(err.status || 500).json({
     success: false,
-    message: "Internal server error",
+    message: err.message || "Internal server error",
   });
 });
 

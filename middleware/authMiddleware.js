@@ -4,11 +4,10 @@ exports.protect = async (req, res, next) => {
   try {
     let token = null;
 
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer ")
-    ) {
-      token = req.headers.authorization.split(" ")[1];
+    const authHeader = req.headers.authorization || "";
+
+    if (authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1]?.trim();
     }
 
     if (!token) {
@@ -18,17 +17,48 @@ exports.protect = async (req, res, next) => {
       });
     }
 
+    if (!process.env.JWT_SECRET) {
+      console.error("AUTH MIDDLEWARE ERROR: JWT_SECRET is missing");
+      return res.status(500).json({
+        success: false,
+        message: "Server auth configuration error",
+      });
+    }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     req.user = {
       ...decoded,
-      id: decoded.id || decoded._id,
-      _id: decoded._id || decoded.id,
+      id: decoded.id || decoded._id || null,
+      _id: decoded._id || decoded.id || null,
+      role: decoded.role || "user",
     };
+
+    if (!req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token payload",
+      });
+    }
 
     next();
   } catch (error) {
     console.error("AUTH MIDDLEWARE ERROR:", error);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired, please login again",
+      });
+    }
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
+
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",

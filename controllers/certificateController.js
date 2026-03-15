@@ -15,16 +15,226 @@ const generateCertificateId = () => {
   return `CERT-${Date.now()}-${random}`;
 };
 
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getUserId = (req) => req.user?.id || req.user?._id;
+
+const getSelectedDurationDays = (purchase, internship) => {
+  const purchaseDays =
+    purchase?.selectedDurationDays ||
+    purchase?.durationDays ||
+    purchase?.selectedPlan?.durationDays;
+
+  if (purchaseDays) {
+    return Math.max(1, toNumber(purchaseDays, 30));
+  }
+
+  const firstDurationDays = Array.isArray(internship?.durations)
+    ? internship.durations[0]?.durationDays
+    : null;
+
+  if (firstDurationDays) {
+    return Math.max(1, toNumber(firstDurationDays, 30));
+  }
+
+  return Math.max(1, toNumber(internship?.durationDays, 30));
+};
+
+const calculateCompletedDays = (enrolledAt, selectedDurationDays) => {
+  const safeDurationDays = Math.max(0, toNumber(selectedDurationDays, 0));
+
+  if (!enrolledAt) return 0;
+
+  const start = new Date(enrolledAt);
+  const today = new Date();
+
+  if (Number.isNaN(start.getTime())) return 0;
+
+  const diffTime = today - start;
+  const diffDays = Math.max(
+    0,
+    Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
+  );
+
+  return diffDays > safeDurationDays ? safeDurationDays : diffDays;
+};
+
+const calculateProgressStats = (internship, progressDoc) => {
+  const modules = Array.isArray(internship?.modules) ? internship.modules : [];
+
+  let totalVideos = 0;
+  let totalWatchedPercent = 0;
+  let completedVideos = 0;
+
+  modules.forEach((module) => {
+    const videos = Array.isArray(module?.videos) ? module.videos : [];
+
+    videos.forEach((video) => {
+      totalVideos += 1;
+
+      const matchedProgress = (progressDoc.videoProgress || []).find(
+        (item) => String(item.videoId) === String(video._id)
+      );
+
+      const watchedPercent = toNumber(matchedProgress?.watchedPercent, 0);
+      totalWatchedPercent += watchedPercent;
+
+      if (watchedPercent >= 80 || matchedProgress?.completed) {
+        completedVideos += 1;
+      }
+    });
+  });
+
+  const completedModules = modules.filter((module) => {
+    const videos = Array.isArray(module?.videos) ? module.videos : [];
+    if (!videos.length) return false;
+
+    return videos.every((video) => {
+      const matchedProgress = (progressDoc.videoProgress || []).find(
+        (item) => String(item.videoId) === String(video._id)
+      );
+
+      return toNumber(matchedProgress?.watchedPercent, 0) >= 80;
+    });
+  }).length;
+
+  const overallProgress =
+    totalVideos > 0 ? Math.round(totalWatchedPercent / totalVideos) : 0;
+
+  return {
+    totalModules: modules.length,
+    totalVideos,
+    completedModules,
+    completedVideos,
+    overallProgress,
+  };
+};
+
+const applyCertificateDerivedFields = async ({
+  internship,
+  internshipId,
+  progress,
+  userId,
+}) => {
+  const latestTest = await TestResult.findOne({
+    userId,
+    internshipId,
+  }).sort({ createdAt: -1 });
+
+  if (latestTest?.passed) {
+    progress.miniTestPassed = true;
+  }
+
+  const stats = calculateProgressStats(internship, progress);
+
+  progress.totalModules = stats.totalModules;
+  progress.totalVideos = stats.totalVideos;
+  progress.completedModules = stats.completedModules;
+  progress.completedVideos = stats.completedVideos;
+  progress.overallProgress = stats.overallProgress;
+
+  progress.completedDays = calculateCompletedDays(
+    progress.enrolledAt,
+    progress.selectedDurationDays
+  );
+
+  progress.durationCompleted =
+    progress.completedDays >= toNumber(progress.selectedDurationDays, 0);
+
+  progress.miniTestUnlocked =
+    progress.overallProgress >= toNumber(internship.miniTestUnlockProgress, 80);
+
+  progress.certificateEligible =
+    Boolean(internship.certificateEnabled) &&
+    progress.overallProgress >= toNumber(internship.requiredProgress, 80) &&
+    Boolean(progress.miniTestPassed) &&
+    Boolean(progress.durationCompleted);
+
+  return progress;
+};
+
+const ensureProgressDoc = async ({ internship, internshipId, purchase, userId }) => {
+  let progress = await Progress.findOne({
+    userId,
+    internshipId,
+  });
+
+  if (!progress) {
+    const totalVideos = (internship.modules || []).reduce(
+      (sum, module) => sum + ((module.videos || []).length || 0),
+      0
+    );
+
+    progress = await Progress.create({
+      userId,
+      internshipId,
+      purchaseId: purchase._id,
+      enrolledAt: purchase.createdAt || new Date(),
+      selectedDurationDays: getSelectedDurationDays(purchase, internship),
+      totalModules: internship.modules?.length || 0,
+      totalVideos,
+      completedModules: 0,
+      completedVideos: 0,
+      overallProgress: 0,
+      completedDays: 0,
+      durationCompleted: false,
+      miniTestUnlocked: false,
+      miniTestPassed: false,
+      certificateEligible: false,
+      unlockAllPurchased: false,
+      videoProgress: [],
+    });
+  }
+
+  return progress;
+};
+
+const getPurchaseDurationLabel = (purchase, internship) => {
+  return (
+    purchase?.durationLabel ||
+    purchase?.selectedPlan?.label ||
+    internship?.duration ||
+    `${getSelectedDurationDays(purchase, internship)} Days`
+  );
+};
+
+const getVerifyBaseUrl = () => {
+  return (
+    process.env.CLIENT_URL ||
+    process.env.REACT_APP_FRONTEND_URL ||
+    process.env.FRONTEND_URL ||
+    "http://localhost:3000"
+  );
+};
+
 exports.checkCertificateEligibility = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
         success: false,
         message: "Internship not found",
+      });
+    }
+
+    if (!internship.certificateEnabled) {
+      return res.status(200).json({
+        success: true,
+        eligible: false,
+        progress: {
+          overallProgress: 0,
+          miniTestPassed: false,
+          durationCompleted: false,
+          certificateEligible: false,
+        },
+        certificate: null,
+        message: "Certificate is disabled for this internship",
       });
     }
 
@@ -41,40 +251,19 @@ exports.checkCertificateEligibility = async (req, res) => {
       });
     }
 
-    let progress = await Progress.findOne({
-      userId,
+    const progress = await ensureProgressDoc({
+      internship,
       internshipId,
+      purchase,
+      userId,
     });
 
-    if (!progress) {
-      return res.status(200).json({
-        success: true,
-        eligible: false,
-        progress: {
-          overallProgress: 0,
-          miniTestPassed: false,
-          durationCompleted: false,
-          certificateEligible: false,
-        },
-        certificate: null,
-      });
-    }
-
-    const existingTestResult = await TestResult.findOne({
-      userId,
+    await applyCertificateDerivedFields({
+      internship,
       internshipId,
-    }).sort({ createdAt: -1 });
-
-    if (existingTestResult?.passed && !progress.miniTestPassed) {
-      progress.miniTestPassed = true;
-    }
-
-    const requiredProgress = internship.requiredProgress || 80;
-
-    progress.certificateEligible =
-      progress.overallProgress >= requiredProgress &&
-      progress.miniTestPassed &&
-      progress.durationCompleted;
+      progress,
+      userId,
+    });
 
     await progress.save();
 
@@ -86,7 +275,7 @@ exports.checkCertificateEligibility = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      eligible: progress.certificateEligible,
+      eligible: Boolean(progress.certificateEligible),
       progress: {
         overallProgress: progress.overallProgress || 0,
         miniTestPassed: progress.miniTestPassed || false,
@@ -107,7 +296,7 @@ exports.checkCertificateEligibility = async (req, res) => {
 exports.generateCertificate = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
     const purchase = await Purchase.findOne({
       userId,
@@ -130,33 +319,26 @@ exports.generateCertificate = async (req, res) => {
       });
     }
 
-    let progress = await Progress.findOne({
-      userId,
-      internshipId,
-    });
-
-    if (!progress) {
+    if (!internship.certificateEnabled) {
       return res.status(403).json({
         success: false,
-        message: "You are not eligible for certificate yet",
+        message: "Certificate is disabled for this internship",
       });
     }
 
-    const existingTestResult = await TestResult.findOne({
-      userId,
+    const progress = await ensureProgressDoc({
+      internship,
       internshipId,
-    }).sort({ createdAt: -1 });
+      purchase,
+      userId,
+    });
 
-    if (existingTestResult?.passed && !progress.miniTestPassed) {
-      progress.miniTestPassed = true;
-    }
-
-    const requiredProgress = internship.requiredProgress || 80;
-
-    progress.certificateEligible =
-      progress.overallProgress >= requiredProgress &&
-      progress.miniTestPassed &&
-      progress.durationCompleted;
+    await applyCertificateDerivedFields({
+      internship,
+      internshipId,
+      progress,
+      userId,
+    });
 
     await progress.save();
 
@@ -178,7 +360,17 @@ exports.generateCertificate = async (req, res) => {
         internshipId,
         purchaseId: purchase._id,
         certificateId: generateCertificateId(),
+        issuedAt: new Date(),
+        status: "issued",
       });
+    } else {
+      if (!certificate.certificateId) {
+        certificate.certificateId = generateCertificateId();
+      }
+      certificate.purchaseId = certificate.purchaseId || purchase._id;
+      certificate.issuedAt = certificate.issuedAt || new Date();
+      certificate.status = "issued";
+      await certificate.save();
     }
 
     return res.status(200).json({
@@ -198,7 +390,7 @@ exports.generateCertificate = async (req, res) => {
 exports.downloadCertificate = async (req, res) => {
   try {
     const { certificateId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
     const certificate = await Certificate.findOne({
       certificateId,
@@ -212,7 +404,7 @@ exports.downloadCertificate = async (req, res) => {
       });
     }
 
-    if (certificate.userId.toString() !== userId.toString()) {
+    if (String(certificate.userId) !== String(userId)) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to download this certificate",
@@ -223,7 +415,16 @@ exports.downloadCertificate = async (req, res) => {
     const internship = await Internship.findById(certificate.internshipId);
     const purchase = await Purchase.findById(certificate.purchaseId);
 
-    const issuedDate = new Date(certificate.issuedAt).toLocaleDateString("en-IN", {
+    if (!user || !internship) {
+      return res.status(404).json({
+        success: false,
+        message: "Certificate data is incomplete",
+      });
+    }
+
+    const issuedDate = new Date(
+      certificate.issuedAt || certificate.createdAt || new Date()
+    ).toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "long",
       year: "numeric",
@@ -240,8 +441,11 @@ exports.downloadCertificate = async (req, res) => {
       },
     });
 
-    const safeName = (user?.name || "candidate").replace(/[^a-z0-9]/gi, "_");
-    const fileName = `${safeName}_certificate.pdf`;
+    const safeName = (user?.name || "candidate")
+      .replace(/[^a-z0-9]/gi, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+    const fileName = `${safeName || "candidate"}_certificate.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
@@ -264,14 +468,12 @@ exports.downloadCertificate = async (req, res) => {
 
     const colors = {
       navy: "#0B1736",
-      navySoft: "#233A67",
       gold: "#B7892E",
       goldLight: "#E7D3A5",
       cream: "#FCFBF7",
       text: "#1F2937",
       soft: "#6B7280",
       white: "#FFFFFF",
-      border: "#D6C299",
     };
 
     doc.rect(0, 0, pageWidth, pageHeight).fill(colors.cream);
@@ -458,9 +660,10 @@ exports.downloadCertificate = async (req, res) => {
       .fontSize(14.5)
       .fillColor(colors.text)
       .text(
-        `under the ${internship?.branch || "General"} stream for a duration of ${
-          purchase?.durationLabel || "the selected period"
-        }.`,
+        `under the ${internship?.branch || "General"} stream for a duration of ${getPurchaseDurationLabel(
+          purchase,
+          internship
+        )}.`,
         left,
         268,
         {
@@ -558,12 +761,7 @@ exports.downloadCertificate = async (req, res) => {
         });
     }
 
-    const verifyBaseUrl =
-      process.env.CLIENT_URL ||
-      process.env.REACT_APP_FRONTEND_URL ||
-      "http://localhost:3000";
-
-    const verifyUrl = `${verifyBaseUrl}/verify/${certificate.certificateId}`;
+    const verifyUrl = `${getVerifyBaseUrl()}/verify/${certificate.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl);
     const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
     const qrBuffer = Buffer.from(qrBase64, "base64");
@@ -591,10 +789,12 @@ exports.downloadCertificate = async (req, res) => {
     doc.end();
   } catch (error) {
     console.error("DOWNLOAD CERTIFICATE ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to download certificate",
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to download certificate",
+      });
+    }
   }
 };
 
@@ -625,11 +825,11 @@ exports.verifyCertificate = async (req, res) => {
       certificate: {
         certificateId: certificate.certificateId,
         issuedAt: certificate.issuedAt,
-        candidateName: user?.name,
-        candidateEmail: user?.email,
-        internshipTitle: internship?.title,
-        branch: internship?.branch,
-        category: internship?.category,
+        candidateName: user?.name || "Candidate",
+        candidateEmail: user?.email || "",
+        internshipTitle: internship?.title || "Internship Program",
+        branch: internship?.branch || "",
+        category: internship?.category || "",
         status: certificate.status,
       },
     });

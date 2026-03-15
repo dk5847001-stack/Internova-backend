@@ -3,41 +3,141 @@ const Progress = require("../models/Progress");
 const Purchase = require("../models/Purchase");
 const TestResult = require("../models/TestResult");
 
-// helper
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const safeArray = (value) => (Array.isArray(value) ? value : []);
+
+const sortByOrder = (items = []) => {
+  return [...safeArray(items)].sort(
+    (a, b) => toNumber(a?.order, 0) - toNumber(b?.order, 0)
+  );
+};
+
+const getUserId = (req) => req.user?.id || req.user?._id;
+
+const calculateCompletedDays = (enrolledAt, selectedDurationDays) => {
+  const safeDurationDays = Math.max(0, toNumber(selectedDurationDays, 0));
+
+  if (!enrolledAt) return 0;
+
+  const start = new Date(enrolledAt);
+  const today = new Date();
+
+  if (Number.isNaN(start.getTime())) return 0;
+
+  const diffTime = today - start;
+  const diffDays = Math.max(
+    0,
+    Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
+  );
+
+  return diffDays > safeDurationDays ? safeDurationDays : diffDays;
+};
+
+const getSelectedDurationDays = (purchase, internship) => {
+  const purchaseDays =
+    purchase?.selectedDurationDays ||
+    purchase?.durationDays ||
+    purchase?.selectedPlan?.durationDays;
+
+  if (purchaseDays) {
+    return Math.max(1, toNumber(purchaseDays, 30));
+  }
+
+  const firstDurationDays = safeArray(internship?.durations)[0]?.durationDays;
+  if (firstDurationDays) {
+    return Math.max(1, toNumber(firstDurationDays, 30));
+  }
+
+  return Math.max(1, toNumber(internship?.durationDays, 30));
+};
+
+const findModuleById = (internship, moduleId) => {
+  return safeArray(internship?.modules).find(
+    (module) => String(module?._id) === String(moduleId)
+  );
+};
+
+const findVideoInModule = (module, videoId) => {
+  return safeArray(module?.videos).find(
+    (video) => String(video?._id) === String(videoId)
+  );
+};
+
+const isModuleUnlocked = (progressDoc, module) => {
+  if (!module) return false;
+
+  const completedDays = calculateCompletedDays(
+    progressDoc.enrolledAt,
+    progressDoc.selectedDurationDays
+  );
+
+  return (
+    Boolean(progressDoc.unlockAllPurchased) ||
+    completedDays >= Math.max(1, toNumber(module.unlockDay, 1))
+  );
+};
+
+const getUnlockedModules = (internship, progressDoc) => {
+  const completedDays = calculateCompletedDays(
+    progressDoc.enrolledAt,
+    progressDoc.selectedDurationDays
+  );
+
+  return sortByOrder(internship.modules).map((module, moduleIndex) => ({
+    ...module.toObject(),
+    order: toNumber(module.order, moduleIndex + 1),
+    unlockDay: Math.max(1, toNumber(module.unlockDay, moduleIndex + 1)),
+    videos: sortByOrder(module.videos),
+    isUnlocked:
+      progressDoc.unlockAllPurchased ||
+      completedDays >= Math.max(1, toNumber(module.unlockDay, moduleIndex + 1)),
+  }));
+};
+
 const calculateProgressStats = (internship, progressDoc) => {
-  const allModules = internship.modules || [];
+  const allModules = sortByOrder(internship.modules);
   const totalModules = allModules.length;
 
-  const allVideos = allModules.flatMap((module) =>
-    (module.videos || []).map((video) => ({
-      moduleId: module._id.toString(),
-      videoId: video._id.toString(),
-    }))
-  );
+  let totalVideos = 0;
+  let totalWatchedPercent = 0;
+  let completedVideos = 0;
 
-  const totalVideos = allVideos.length;
+  allModules.forEach((module) => {
+    sortByOrder(module.videos).forEach((video) => {
+      totalVideos += 1;
 
-  const completedVideoEntries = progressDoc.videoProgress.filter(
-    (item) => item.completed
-  );
+      const matchedProgress = safeArray(progressDoc.videoProgress).find(
+        (item) => String(item.videoId) === String(video._id)
+      );
 
-  const completedVideos = completedVideoEntries.length;
+      const watchedPercent = toNumber(matchedProgress?.watchedPercent, 0);
+      totalWatchedPercent += watchedPercent;
+
+      if (watchedPercent >= 80 || matchedProgress?.completed) {
+        completedVideos += 1;
+      }
+    });
+  });
 
   const completedModules = allModules.filter((module) => {
-    const moduleVideos = module.videos || [];
+    const moduleVideos = safeArray(module.videos);
     if (!moduleVideos.length) return false;
 
-    return moduleVideos.every((video) =>
-      progressDoc.videoProgress.some(
-        (vp) =>
-          vp.videoId.toString() === video._id.toString() &&
-          vp.completed === true
-      )
-    );
+    return moduleVideos.every((video) => {
+      const matchedProgress = safeArray(progressDoc.videoProgress).find(
+        (item) => String(item.videoId) === String(video._id)
+      );
+
+      return toNumber(matchedProgress?.watchedPercent, 0) >= 80;
+    });
   }).length;
 
   const overallProgress =
-    totalVideos > 0 ? Math.round((completedVideos / totalVideos) * 100) : 0;
+    totalVideos > 0 ? Math.round(totalWatchedPercent / totalVideos) : 0;
 
   return {
     totalModules,
@@ -48,31 +148,75 @@ const calculateProgressStats = (internship, progressDoc) => {
   };
 };
 
-const calculateCompletedDays = (enrolledAt, selectedDurationDays) => {
-  const start = new Date(enrolledAt);
-  const today = new Date();
+const applyDerivedProgressFields = async (internship, progressDoc, userId, internshipId) => {
+  const latestTest = await TestResult.findOne({
+    userId,
+    internshipId,
+  }).sort({ createdAt: -1 });
 
-  const diffTime = today - start;
-  const diffDays = Math.max(
-    0,
-    Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
-  );
+  if (latestTest?.passed) {
+    progressDoc.miniTestPassed = true;
+  }
 
-  return diffDays > selectedDurationDays ? selectedDurationDays : diffDays;
-};
+  const stats = calculateProgressStats(internship, progressDoc);
+  progressDoc.totalModules = stats.totalModules;
+  progressDoc.totalVideos = stats.totalVideos;
+  progressDoc.completedModules = stats.completedModules;
+  progressDoc.completedVideos = stats.completedVideos;
+  progressDoc.overallProgress = stats.overallProgress;
 
-const getUnlockedModules = (internship, progressDoc) => {
-  const completedDays = calculateCompletedDays(
+  progressDoc.completedDays = calculateCompletedDays(
     progressDoc.enrolledAt,
     progressDoc.selectedDurationDays
   );
 
-  return (internship.modules || []).map((module) => ({
-    ...module.toObject(),
-    isUnlocked:
-      progressDoc.unlockAllPurchased ||
-      completedDays >= (module.unlockDay || 1),
-  }));
+  progressDoc.durationCompleted =
+    progressDoc.completedDays >= toNumber(progressDoc.selectedDurationDays, 0);
+
+  progressDoc.miniTestUnlocked =
+    progressDoc.overallProgress >= toNumber(internship.miniTestUnlockProgress, 80);
+
+  progressDoc.certificateEligible =
+    Boolean(internship.certificateEnabled) &&
+    progressDoc.overallProgress >= toNumber(internship.requiredProgress, 80) &&
+    Boolean(progressDoc.miniTestPassed) &&
+    Boolean(progressDoc.durationCompleted);
+
+  return progressDoc;
+};
+
+const ensureProgressDoc = async ({ internship, internshipId, purchase, userId }) => {
+  let progress = await Progress.findOne({
+    userId,
+    internshipId,
+  });
+
+  if (!progress) {
+    progress = await Progress.create({
+      userId,
+      internshipId,
+      purchaseId: purchase._id,
+      enrolledAt: purchase.createdAt || new Date(),
+      selectedDurationDays: getSelectedDurationDays(purchase, internship),
+      totalModules: safeArray(internship.modules).length,
+      totalVideos: safeArray(internship.modules).reduce(
+        (sum, module) => sum + safeArray(module.videos).length,
+        0
+      ),
+      completedModules: 0,
+      completedVideos: 0,
+      overallProgress: 0,
+      completedDays: 0,
+      durationCompleted: false,
+      miniTestUnlocked: false,
+      miniTestPassed: false,
+      certificateEligible: false,
+      unlockAllPurchased: false,
+      videoProgress: [],
+    });
+  }
+
+  return progress;
 };
 
 // @desc   Get full course progress page data
@@ -81,7 +225,14 @@ const getUnlockedModules = (internship, progressDoc) => {
 exports.getCourseProgress = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
+
+    if (!internshipId) {
+      return res.status(400).json({
+        success: false,
+        message: "Internship ID is required",
+      });
+    }
 
     const internship = await Internship.findById(internshipId);
     if (!internship) {
@@ -92,8 +243,8 @@ exports.getCourseProgress = async (req, res) => {
     }
 
     const purchase = await Purchase.findOne({
-      userId: userId,
-      internshipId: internshipId,
+      userId,
+      internshipId,
       paymentStatus: "paid",
     });
 
@@ -104,85 +255,46 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
-    let progress = await Progress.findOne({
-      userId: userId,
-      internshipId: internshipId,
+    const progress = await ensureProgressDoc({
+      internship,
+      internshipId,
+      purchase,
+      userId,
     });
 
-    if (!progress) {
-      progress = await Progress.create({
-        userId: userId,
-        internshipId: internshipId,
-        purchaseId: purchase._id,
-        enrolledAt: purchase.createdAt || new Date(),
-        selectedDurationDays: internship.durationDays || 30,
-        totalModules: internship.modules?.length || 0,
-        totalVideos: (internship.modules || []).reduce(
-          (sum, module) => sum + (module.videos?.length || 0),
-          0
-        ),
-      });
-    }
-
-    const latestTest = await TestResult.findOne({
-      userId: userId,
-      internshipId: internshipId,
-    }).sort({ createdAt: -1 });
-
-    if (latestTest?.passed && !progress.miniTestPassed) {
-      progress.miniTestPassed = true;
-    }
-
-    const stats = calculateProgressStats(internship, progress);
-    progress.totalModules = stats.totalModules;
-    progress.totalVideos = stats.totalVideos;
-    progress.completedModules = stats.completedModules;
-    progress.completedVideos = stats.completedVideos;
-    progress.overallProgress = stats.overallProgress;
-
-    progress.completedDays = calculateCompletedDays(
-      progress.enrolledAt,
-      progress.selectedDurationDays
-    );
-
-    progress.durationCompleted =
-      progress.completedDays >= progress.selectedDurationDays;
-
-    progress.miniTestUnlocked =
-      progress.overallProgress >= (internship.miniTestUnlockProgress || 80);
-
-    progress.certificateEligible =
-      progress.overallProgress >= (internship.requiredProgress || 80) &&
-      progress.miniTestPassed &&
-      progress.durationCompleted;
-
+    await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
     const unlockedModules = getUnlockedModules(internship, progress);
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       course: {
         id: internship._id,
         title: internship.title,
         category: internship.category,
         branch: internship.branch,
-        duration: internship.duration,
-        durationDays: internship.durationDays,
-        requiredProgress: internship.requiredProgress,
-        miniTestUnlockProgress: internship.miniTestUnlockProgress,
-        miniTestPassMarks: internship.miniTestPassMarks,
-        unlockAllPrice: internship.unlockAllPrice,
-        certificateEnabled: internship.certificateEnabled,
+        duration:
+          internship.duration ||
+          `${getSelectedDurationDays(purchase, internship)} Days`,
+        durationDays: getSelectedDurationDays(purchase, internship),
+        requiredProgress: toNumber(internship.requiredProgress, 80),
+        miniTestUnlockProgress: toNumber(internship.miniTestUnlockProgress, 80),
+        miniTestPassMarks: toNumber(internship.miniTestPassMarks, 60),
+        unlockAllPrice: toNumber(internship.unlockAllPrice, 99),
+        certificateEnabled:
+          typeof internship.certificateEnabled === "boolean"
+            ? internship.certificateEnabled
+            : true,
       },
       progress,
       modules: unlockedModules,
       eligibility: {
         progressCompleted:
-          progress.overallProgress >= (internship.requiredProgress || 80),
-        miniTestCompleted: progress.miniTestPassed,
-        durationCompleted: progress.durationCompleted,
-        eligible: progress.certificateEligible,
+          progress.overallProgress >= toNumber(internship.requiredProgress, 80),
+        miniTestCompleted: Boolean(progress.miniTestPassed),
+        durationCompleted: Boolean(progress.durationCompleted),
+        eligible: Boolean(progress.certificateEligible),
       },
     });
   } catch (error) {
@@ -201,7 +313,7 @@ exports.updateVideoProgress = async (req, res) => {
   try {
     const { internshipId } = req.params;
     const { moduleId, videoId, watchedPercent } = req.body;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
     if (!moduleId || !videoId || watchedPercent === undefined) {
       return res.status(400).json({
@@ -218,33 +330,67 @@ exports.updateVideoProgress = async (req, res) => {
       });
     }
 
-    const progress = await Progress.findOne({
-      userId: userId,
-      internshipId: internshipId,
+    const purchase = await Purchase.findOne({
+      userId,
+      internshipId,
+      paymentStatus: "paid",
     });
 
-    if (!progress) {
-      return res.status(404).json({
+    if (!purchase) {
+      return res.status(403).json({
         success: false,
-        message: "Progress record not found",
+        message: "You have not purchased this internship",
       });
     }
 
-    const safePercent = Math.max(0, Math.min(100, Number(watchedPercent)));
+    const progress = await ensureProgressDoc({
+      internship,
+      internshipId,
+      purchase,
+      userId,
+    });
 
-    const existingIndex = progress.videoProgress.findIndex(
+    const targetModule = findModuleById(internship, moduleId);
+    if (!targetModule) {
+      return res.status(404).json({
+        success: false,
+        message: "Module not found",
+      });
+    }
+
+    const targetVideo = findVideoInModule(targetModule, videoId);
+    if (!targetVideo) {
+      return res.status(404).json({
+        success: false,
+        message: "Video not found in this module",
+      });
+    }
+
+    const unlocked = isModuleUnlocked(progress, targetModule);
+    if (!unlocked) {
+      return res.status(403).json({
+        success: false,
+        message: "This module is still locked",
+      });
+    }
+
+    const safePercent = Math.max(0, Math.min(100, toNumber(watchedPercent, 0)));
+
+    const existingIndex = safeArray(progress.videoProgress).findIndex(
       (item) =>
-        item.moduleId.toString() === moduleId.toString() &&
-        item.videoId.toString() === videoId.toString()
+        String(item.moduleId) === String(moduleId) &&
+        String(item.videoId) === String(videoId)
     );
 
     if (existingIndex >= 0) {
-      progress.videoProgress[existingIndex].watchedPercent = Math.max(
+      const existingPercent = toNumber(
         progress.videoProgress[existingIndex].watchedPercent,
-        safePercent
+        0
       );
-      progress.videoProgress[existingIndex].completed =
-        progress.videoProgress[existingIndex].watchedPercent >= 80;
+      const finalPercent = Math.max(existingPercent, safePercent);
+
+      progress.videoProgress[existingIndex].watchedPercent = finalPercent;
+      progress.videoProgress[existingIndex].completed = finalPercent >= 80;
       progress.videoProgress[existingIndex].lastWatchedAt = new Date();
     } else {
       progress.videoProgress.push({
@@ -256,39 +402,10 @@ exports.updateVideoProgress = async (req, res) => {
       });
     }
 
-    const latestTest = await TestResult.findOne({
-      userId: userId,
-      internshipId: internshipId,
-    }).sort({ createdAt: -1 });
-
-    progress.miniTestPassed = latestTest?.passed || progress.miniTestPassed;
-
-    const stats = calculateProgressStats(internship, progress);
-    progress.totalModules = stats.totalModules;
-    progress.totalVideos = stats.totalVideos;
-    progress.completedModules = stats.completedModules;
-    progress.completedVideos = stats.completedVideos;
-    progress.overallProgress = stats.overallProgress;
-
-    progress.completedDays = calculateCompletedDays(
-      progress.enrolledAt,
-      progress.selectedDurationDays
-    );
-
-    progress.durationCompleted =
-      progress.completedDays >= progress.selectedDurationDays;
-
-    progress.miniTestUnlocked =
-      progress.overallProgress >= (internship.miniTestUnlockProgress || 80);
-
-    progress.certificateEligible =
-      progress.overallProgress >= (internship.requiredProgress || 80) &&
-      progress.miniTestPassed &&
-      progress.durationCompleted;
-
+    await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "Video progress updated successfully",
       progress,
@@ -308,24 +425,42 @@ exports.updateVideoProgress = async (req, res) => {
 exports.unlockAllModules = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
-    const progress = await Progress.findOne({
-      userId: userId,
-      internshipId: internshipId,
-    });
-
-    if (!progress) {
+    const internship = await Internship.findById(internshipId);
+    if (!internship) {
       return res.status(404).json({
         success: false,
-        message: "Progress record not found",
+        message: "Internship not found",
       });
     }
 
+    const purchase = await Purchase.findOne({
+      userId,
+      internshipId,
+      paymentStatus: "paid",
+    });
+
+    if (!purchase) {
+      return res.status(403).json({
+        success: false,
+        message: "You have not purchased this internship",
+      });
+    }
+
+    const progress = await ensureProgressDoc({
+      internship,
+      internshipId,
+      purchase,
+      userId,
+    });
+
     progress.unlockAllPurchased = true;
+
+    await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "All modules unlocked successfully",
       progress,
@@ -345,29 +480,47 @@ exports.unlockAllModules = async (req, res) => {
 exports.getEligibilityStatus = async (req, res) => {
   try {
     const { internshipId } = req.params;
-    const userId = req.user.id || req.user._id;
+    const userId = getUserId(req);
 
     const internship = await Internship.findById(internshipId);
-    const progress = await Progress.findOne({
-      userId: userId,
-      internshipId: internshipId,
-    });
-
-    if (!internship || !progress) {
+    if (!internship) {
       return res.status(404).json({
         success: false,
-        message: "Eligibility data not found",
+        message: "Internship not found",
       });
     }
 
-    return res.json({
+    const purchase = await Purchase.findOne({
+      userId,
+      internshipId,
+      paymentStatus: "paid",
+    });
+
+    if (!purchase) {
+      return res.status(403).json({
+        success: false,
+        message: "You have not purchased this internship",
+      });
+    }
+
+    const progress = await ensureProgressDoc({
+      internship,
+      internshipId,
+      purchase,
+      userId,
+    });
+
+    await applyDerivedProgressFields(internship, progress, userId, internshipId);
+    await progress.save();
+
+    return res.status(200).json({
       success: true,
       eligibility: {
         progressCompleted:
-          progress.overallProgress >= (internship.requiredProgress || 80),
-        miniTestCompleted: progress.miniTestPassed,
-        durationCompleted: progress.durationCompleted,
-        eligible: progress.certificateEligible,
+          progress.overallProgress >= toNumber(internship.requiredProgress, 80),
+        miniTestCompleted: Boolean(progress.miniTestPassed),
+        durationCompleted: Boolean(progress.durationCompleted),
+        eligible: Boolean(progress.certificateEligible),
       },
       progress,
     });
