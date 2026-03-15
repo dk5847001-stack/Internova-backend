@@ -235,7 +235,7 @@ exports.getQuiz = async (req, res) => {
     const existingResult = await TestResult.findOne({
       userId,
       internshipId,
-    }).sort({ createdAt: -1 });
+    });
 
     const locked = existingResult?.passed === true;
 
@@ -264,6 +264,12 @@ exports.submitQuiz = async (req, res) => {
     const { internshipId } = req.params;
     const { answers } = req.body;
     const userId = getUserId(req);
+
+    console.log("QUIZ SUBMIT START:", {
+      internshipId,
+      userId: String(userId),
+      answers,
+    });
 
     const paidPurchase = await Purchase.findOne({
       userId,
@@ -313,8 +319,10 @@ exports.submitQuiz = async (req, res) => {
       });
     }
 
-    const hasInvalidAnswer = answers.some(
-      (answer) => ![0, 1, 2, 3].includes(Number(answer))
+    const normalizedAnswers = answers.map((answer) => Number(answer));
+
+    const hasInvalidAnswer = normalizedAnswers.some(
+      (answer) => ![0, 1, 2, 3].includes(answer)
     );
 
     if (hasInvalidAnswer) {
@@ -369,7 +377,7 @@ exports.submitQuiz = async (req, res) => {
     let score = 0;
 
     quiz.forEach((question, index) => {
-      if (Number(answers[index]) === Number(question.correctAnswer)) {
+      if (normalizedAnswers[index] === Number(question.correctAnswer)) {
         score += 1;
       }
     });
@@ -378,41 +386,50 @@ exports.submitQuiz = async (req, res) => {
     const passMarks = toNumber(internship.miniTestPassMarks, 60);
     const passed = percentage >= passMarks;
 
-    const latestResult = await TestResult.findOne({
+    const previousResult = await TestResult.findOne({
       userId,
       internshipId,
-    }).sort({ createdAt: -1 });
+    });
 
-    let result;
+    const nextAttemptNumber = previousResult
+      ? toNumber(previousResult.attemptNumber, 0) + 1
+      : 1;
 
-    if (latestResult) {
-      latestResult.answers = answers.map((answer) => Number(answer));
-      latestResult.score = score;
-      latestResult.totalQuestions = totalQuestions;
-      latestResult.percentage = percentage;
-      latestResult.passed = passed;
-      latestResult.attemptNumber = toNumber(latestResult.attemptNumber, 0) + 1;
-      latestResult.submittedAt = new Date();
-      result = await latestResult.save();
-    } else {
-      result = await TestResult.create({
-        userId,
-        internshipId,
-        answers: answers.map((answer) => Number(answer)),
-        score,
-        totalQuestions,
-        percentage,
-        passed,
-        attemptNumber: 1,
-        submittedAt: new Date(),
-      });
-    }
+    const result = await TestResult.findOneAndUpdate(
+      { userId, internshipId },
+      {
+        $set: {
+          answers: normalizedAnswers,
+          score,
+          totalQuestions,
+          percentage,
+          passed,
+          attemptNumber: nextAttemptNumber,
+          submittedAt: new Date(),
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
 
     progress.miniTestUnlocked = currentProgress >= unlockProgress;
     progress.miniTestPassed = passed || progress.miniTestPassed;
 
     applyDerivedProgressFields(internship, progress);
     await progress.save();
+
+    console.log("QUIZ SUBMIT SUCCESS:", {
+      internshipId,
+      userId: String(userId),
+      score,
+      percentage,
+      passed,
+      attemptNumber: result?.attemptNumber,
+    });
 
     return res.status(200).json({
       success: true,
@@ -423,10 +440,20 @@ exports.submitQuiz = async (req, res) => {
       progress,
     });
   } catch (error) {
-    console.error("SUBMIT QUIZ ERROR:", error);
+    console.error("SUBMIT QUIZ ERROR FULL:", error);
+    console.error("SUBMIT QUIZ ERROR MESSAGE:", error?.message);
+    console.error("SUBMIT QUIZ ERROR STACK:", error?.stack);
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Quiz result conflict detected. Please try again.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message: "Failed to submit quiz",
+      message: error?.message || "Failed to submit quiz",
     });
   }
 };
