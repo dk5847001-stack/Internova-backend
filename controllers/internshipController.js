@@ -1,4 +1,107 @@
 const Internship = require("../models/Internship");
+const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toTrimmedString = (value) => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const normalizeVideoUrl = (url = "") => {
+  const trimmedUrl = toTrimmedString(url);
+  if (!trimmedUrl) return "";
+  return convertGoogleDriveToPreviewUrl(trimmedUrl);
+};
+
+const sanitizeDurations = (durations = []) => {
+  if (!Array.isArray(durations)) return [];
+
+  return durations
+    .filter((duration) => toTrimmedString(duration?.label))
+    .map((duration, index) => ({
+      label: toTrimmedString(duration.label),
+      price: toNumber(duration.price, 0),
+      durationDays: toNumber(duration.durationDays, 30),
+      order: toNumber(duration.order, index + 1),
+    }));
+};
+
+const sanitizeModules = (modules = []) => {
+  if (!Array.isArray(modules)) return [];
+
+  return modules
+    .filter((module) => toTrimmedString(module?.title))
+    .map((module, index) => ({
+      title: toTrimmedString(module.title),
+      description: toTrimmedString(module.description),
+      unlockDay: toNumber(module.unlockDay, index + 1),
+      order: toNumber(module.order, index + 1),
+      videos: Array.isArray(module.videos)
+        ? module.videos
+            .filter(
+              (video) =>
+                toTrimmedString(video?.title) &&
+                toTrimmedString(video?.videoUrl)
+            )
+            .map((video, videoIndex) => ({
+              title: toTrimmedString(video.title),
+              description: toTrimmedString(video.description),
+              videoUrl: normalizeVideoUrl(video.videoUrl),
+              duration: toTrimmedString(video.duration),
+              order: toNumber(video.order, videoIndex + 1),
+            }))
+            .filter((video) => video.videoUrl)
+        : [],
+    }))
+    .filter((module) => Array.isArray(module.videos) && module.videos.length > 0);
+};
+
+const sanitizeQuiz = (quiz = []) => {
+  if (!Array.isArray(quiz)) return [];
+
+  return quiz
+    .filter(
+      (question) =>
+        toTrimmedString(question?.question) &&
+        Array.isArray(question?.options) &&
+        question.options.length === 4 &&
+        question.options.every((option) => toTrimmedString(option) !== "")
+    )
+    .map((question) => ({
+      question: toTrimmedString(question.question),
+      options: question.options.map((option) => toTrimmedString(option)),
+      correctAnswer: Math.min(3, Math.max(0, toNumber(question.correctAnswer, 0))),
+    }));
+};
+
+const sanitizeInternshipPayload = (body = {}) => {
+  const cleanedDurations = sanitizeDurations(body.durations);
+  const cleanedModules = sanitizeModules(body.modules);
+  const cleanedQuiz = sanitizeQuiz(body.quiz);
+
+  return {
+    title: toTrimmedString(body.title),
+    slug: toTrimmedString(body.slug),
+    branch: toTrimmedString(body.branch),
+    category: toTrimmedString(body.category),
+    description: toTrimmedString(body.description),
+    thumbnail: toTrimmedString(body.thumbnail),
+    image: toTrimmedString(body.image),
+    durations: cleanedDurations,
+    modules: cleanedModules,
+    quiz: cleanedQuiz,
+    requiredProgress: toNumber(body.requiredProgress, 80),
+    miniTestUnlockProgress: toNumber(body.miniTestUnlockProgress, 80),
+    miniTestPassMarks: toNumber(body.miniTestPassMarks, 60),
+    unlockAllPrice: toNumber(body.unlockAllPrice, 99),
+    certificateEnabled:
+      typeof body.certificateEnabled === "boolean" ? body.certificateEnabled : true,
+    isActive: typeof body.isActive === "boolean" ? body.isActive : true,
+  };
+};
 
 // GET all internships
 exports.getAllInternships = async (req, res) => {
@@ -134,100 +237,53 @@ exports.getSingleInternship = async (req, res) => {
 // CREATE internship
 exports.createInternship = async (req, res) => {
   try {
-    const {
-      title,
-      slug,
-      branch,
-      category,
-      description,
-      thumbnail,
-      image,
-      durations,
-      modules,
-      quiz,
-      requiredProgress,
-      miniTestUnlockProgress,
-      miniTestPassMarks,
-      unlockAllPrice,
-      certificateEnabled,
-      isActive,
-    } = req.body;
+    const payload = sanitizeInternshipPayload(req.body);
 
-    if (!title || !branch || !description || !durations?.length) {
+    if (!payload.title || !payload.branch || !payload.description) {
       return res.status(400).json({
         success: false,
-        message: "Title, branch, description and durations are required",
+        message: "Title, branch and description are required",
       });
     }
 
-    const cleanedDurations = Array.isArray(durations)
-      ? durations
-          .filter((d) => d.label && d.label.trim())
-          .map((d, index) => ({
-            label: d.label.trim(),
-            price: Number(d.price || 0),
-            durationDays: Number(d.durationDays || 30),
-            order: Number(d.order || index + 1),
-          }))
-      : [];
+    if (!payload.category) {
+      return res.status(400).json({
+        success: false,
+        message: "Category is required",
+      });
+    }
 
-    const cleanedModules = Array.isArray(modules)
-      ? modules
-          .filter((m) => m.title && m.title.trim())
-          .map((m, index) => ({
-            title: m.title.trim(),
-            description: m.description?.trim() || "",
-            unlockDay: Number(m.unlockDay || index + 1),
-            order: Number(m.order || index + 1),
-            videos: Array.isArray(m.videos)
-              ? m.videos
-                  .filter((v) => v.title && v.title.trim() && v.videoUrl && v.videoUrl.trim())
-                  .map((v, vIndex) => ({
-                    title: v.title.trim(),
-                    description: v.description?.trim() || "",
-                    videoUrl: v.videoUrl.trim(),
-                    duration: v.duration?.trim() || "",
-                    order: Number(v.order || vIndex + 1),
-                  }))
-              : [],
-          }))
-      : [];
+    if (!payload.durations.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one valid duration is required",
+      });
+    }
 
-    const cleanedQuiz = Array.isArray(quiz)
-      ? quiz
-          .filter(
-            (q) =>
-              q.question &&
-              q.question.trim() &&
-              Array.isArray(q.options) &&
-              q.options.length === 4 &&
-              q.options.every((opt) => String(opt).trim() !== "")
-          )
-          .map((q) => ({
-            question: q.question.trim(),
-            options: q.options.map((opt) => String(opt).trim()),
-            correctAnswer: Number(q.correctAnswer),
-          }))
-      : [];
+    if (!payload.modules.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one valid module with video is required",
+      });
+    }
 
     const internship = await Internship.create({
-      title,
-      slug: slug?.trim() || "",
-      branch,
-      category,
-      description,
-      thumbnail,
-      image,
-      durations: cleanedDurations,
-      modules: cleanedModules,
-      quiz: cleanedQuiz,
-      requiredProgress: Number(requiredProgress || 80),
-      miniTestUnlockProgress: Number(miniTestUnlockProgress || 80),
-      miniTestPassMarks: Number(miniTestPassMarks || 60),
-      unlockAllPrice: Number(unlockAllPrice || 99),
-      certificateEnabled:
-        typeof certificateEnabled === "boolean" ? certificateEnabled : true,
-      isActive: typeof isActive === "boolean" ? isActive : true,
+      title: payload.title,
+      slug: payload.slug || "",
+      branch: payload.branch,
+      category: payload.category,
+      description: payload.description,
+      thumbnail: payload.thumbnail,
+      image: payload.image,
+      durations: payload.durations,
+      modules: payload.modules,
+      quiz: payload.quiz,
+      requiredProgress: payload.requiredProgress,
+      miniTestUnlockProgress: payload.miniTestUnlockProgress,
+      miniTestPassMarks: payload.miniTestPassMarks,
+      unlockAllPrice: payload.unlockAllPrice,
+      certificateEnabled: payload.certificateEnabled,
+      isActive: payload.isActive,
     });
 
     return res.status(201).json({
@@ -256,97 +312,52 @@ exports.updateInternship = async (req, res) => {
       });
     }
 
-    const {
-      title,
-      slug,
-      branch,
-      category,
-      description,
-      thumbnail,
-      image,
-      durations,
-      modules,
-      quiz,
-      requiredProgress,
-      miniTestUnlockProgress,
-      miniTestPassMarks,
-      unlockAllPrice,
-      certificateEnabled,
-      isActive,
-    } = req.body;
+    const payload = sanitizeInternshipPayload(req.body);
 
-    const cleanedDurations = Array.isArray(durations)
-      ? durations
-          .filter((d) => d.label && d.label.trim())
-          .map((d, index) => ({
-            label: d.label.trim(),
-            price: Number(d.price || 0),
-            durationDays: Number(d.durationDays || 30),
-            order: Number(d.order || index + 1),
-          }))
-      : internship.durations;
-
-    const cleanedModules = Array.isArray(modules)
-      ? modules
-          .filter((m) => m.title && m.title.trim())
-          .map((m, index) => ({
-            title: m.title.trim(),
-            description: m.description?.trim() || "",
-            unlockDay: Number(m.unlockDay || index + 1),
-            order: Number(m.order || index + 1),
-            videos: Array.isArray(m.videos)
-              ? m.videos
-                  .filter((v) => v.title && v.title.trim() && v.videoUrl && v.videoUrl.trim())
-                  .map((v, vIndex) => ({
-                    title: v.title.trim(),
-                    description: v.description?.trim() || "",
-                    videoUrl: v.videoUrl.trim(),
-                    duration: v.duration?.trim() || "",
-                    order: Number(v.order || vIndex + 1),
-                  }))
-              : [],
-          }))
-      : internship.modules;
-
-    const cleanedQuiz = Array.isArray(quiz)
-      ? quiz
-          .filter(
-            (q) =>
-              q.question &&
-              q.question.trim() &&
-              Array.isArray(q.options) &&
-              q.options.length === 4 &&
-              q.options.every((opt) => String(opt).trim() !== "")
-          )
-          .map((q) => ({
-            question: q.question.trim(),
-            options: q.options.map((opt) => String(opt).trim()),
-            correctAnswer: Number(q.correctAnswer),
-          }))
-      : internship.quiz;
-
-    internship.title = title;
-    internship.slug = slug?.trim() || "";
-    internship.branch = branch;
-    internship.category = category;
-    internship.description = description;
-    internship.thumbnail = thumbnail;
-    internship.image = image;
-    internship.durations = cleanedDurations;
-    internship.modules = cleanedModules;
-    internship.quiz = cleanedQuiz;
-    internship.requiredProgress = Number(requiredProgress || 80);
-    internship.miniTestUnlockProgress = Number(miniTestUnlockProgress || 80);
-    internship.miniTestPassMarks = Number(miniTestPassMarks || 60);
-    internship.unlockAllPrice = Number(unlockAllPrice || 99);
-
-    if (typeof certificateEnabled === "boolean") {
-      internship.certificateEnabled = certificateEnabled;
+    if (!payload.title || !payload.branch || !payload.description) {
+      return res.status(400).json({
+        success: false,
+        message: "Title, branch and description are required",
+      });
     }
 
-    if (typeof isActive === "boolean") {
-      internship.isActive = isActive;
+    if (!payload.category) {
+      return res.status(400).json({
+        success: false,
+        message: "Category is required",
+      });
     }
+
+    if (!payload.durations.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one valid duration is required",
+      });
+    }
+
+    if (!payload.modules.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one valid module with video is required",
+      });
+    }
+
+    internship.title = payload.title;
+    internship.slug = payload.slug || "";
+    internship.branch = payload.branch;
+    internship.category = payload.category;
+    internship.description = payload.description;
+    internship.thumbnail = payload.thumbnail;
+    internship.image = payload.image;
+    internship.durations = payload.durations;
+    internship.modules = payload.modules;
+    internship.quiz = payload.quiz;
+    internship.requiredProgress = payload.requiredProgress;
+    internship.miniTestUnlockProgress = payload.miniTestUnlockProgress;
+    internship.miniTestPassMarks = payload.miniTestPassMarks;
+    internship.unlockAllPrice = payload.unlockAllPrice;
+    internship.certificateEnabled = payload.certificateEnabled;
+    internship.isActive = payload.isActive;
 
     await internship.save();
 
@@ -364,6 +375,7 @@ exports.updateInternship = async (req, res) => {
   }
 };
 
+// DELETE internship
 exports.deleteInternship = async (req, res) => {
   try {
     const internship = await Internship.findById(req.params.id);
