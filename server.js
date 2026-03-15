@@ -15,6 +15,7 @@ const purchaseRoutes = require("./routes/purchaseRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 
@@ -111,6 +112,7 @@ app.use("/api/purchases", purchaseRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/certificates", certificateRoutes);
+app.use("/api/admin", adminRoutes);
 
 /* =========================
    404 Handler
