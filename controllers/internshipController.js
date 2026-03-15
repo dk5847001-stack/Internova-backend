@@ -4,7 +4,7 @@ const Purchase = require("../models/Purchase");
 const Certificate = require("../models/Certificate");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
-const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
+const { convertVideoUrlToEmbedUrl } = require("../utils/googleDrive");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -18,7 +18,7 @@ const toTrimmedString = (value) => {
 const normalizeVideoUrl = (url = "") => {
   const trimmedUrl = toTrimmedString(url);
   if (!trimmedUrl) return "";
-  return convertGoogleDriveToPreviewUrl(trimmedUrl);
+  return convertVideoUrlToEmbedUrl(trimmedUrl);
 };
 
 const sanitizeDurations = (durations = []) => {
@@ -61,7 +61,9 @@ const sanitizeModules = (modules = []) => {
             .filter((video) => video.videoUrl)
         : [],
     }))
-    .filter((module) => Array.isArray(module.videos) && module.videos.length > 0);
+    .filter(
+      (module) => Array.isArray(module.videos) && module.videos.length > 0
+    );
 };
 
 const sanitizeQuiz = (quiz = []) => {
@@ -78,7 +80,10 @@ const sanitizeQuiz = (quiz = []) => {
     .map((question) => ({
       question: toTrimmedString(question.question),
       options: question.options.map((option) => toTrimmedString(option)),
-      correctAnswer: Math.min(3, Math.max(0, toNumber(question.correctAnswer, 0))),
+      correctAnswer: Math.min(
+        3,
+        Math.max(0, toNumber(question.correctAnswer, 0))
+      ),
     }));
 };
 
@@ -103,7 +108,9 @@ const sanitizeInternshipPayload = (body = {}) => {
     miniTestPassMarks: toNumber(body.miniTestPassMarks, 60),
     unlockAllPrice: toNumber(body.unlockAllPrice, 99),
     certificateEnabled:
-      typeof body.certificateEnabled === "boolean" ? body.certificateEnabled : true,
+      typeof body.certificateEnabled === "boolean"
+        ? body.certificateEnabled
+        : true,
     isActive: typeof body.isActive === "boolean" ? body.isActive : true,
   };
 };
@@ -160,13 +167,19 @@ exports.getAdminInternshipStats = async (req, res) => {
       progresses,
     ] = await Promise.all([
       Internship.find().sort({ createdAt: -1 }),
-      User.find().select("name email role createdAt lastLoginAt isActive").sort({ createdAt: -1 }),
+      User.find()
+        .select("name email role createdAt lastLoginAt isActive")
+        .sort({ createdAt: -1 }),
       Purchase.find()
         .populate("userId", "name email role lastLoginAt isActive createdAt")
         .populate("internshipId", "title branch category")
         .sort({ createdAt: -1 }),
-      Certificate.find({ status: "issued" }).select("userId internshipId certificateId issuedAt status"),
-      TestResult.find({ passed: true }).select("userId internshipId percentage passed submittedAt"),
+      Certificate.find({ status: "issued" }).select(
+        "userId internshipId certificateId issuedAt status"
+      ),
+      TestResult.find({ passed: true }).select(
+        "userId internshipId percentage passed submittedAt"
+      ),
       Progress.find().select(
         "userId internshipId overallProgress miniTestPassed certificateEligible completedDays durationCompleted unlockAllPurchased updatedAt"
       ),
@@ -200,7 +213,9 @@ exports.getAdminInternshipStats = async (req, res) => {
     const totalAdmins = users.filter((user) => user.role === "admin").length;
     const totalNormalUsers = totalUsers - totalAdmins;
     const activeUsers = users.filter((user) => user.isActive !== false).length;
-    const recentlyLoggedInUsers = users.filter((user) => !!user.lastLoginAt).length;
+    const recentlyLoggedInUsers = users.filter(
+      (user) => !!user.lastLoginAt
+    ).length;
 
     const totalPurchases = purchases.length;
     const paidPurchases = purchases.filter(

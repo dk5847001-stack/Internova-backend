@@ -26,14 +26,36 @@ const buildGoogleDrivePreviewUrl = (fileId = "") => {
   return `https://drive.google.com/file/d/${trimmedFileId}/preview`;
 };
 
-const convertGoogleDriveToPreviewUrl = (input = "") => {
-  const trimmedInput = typeof input === "string" ? input.trim() : "";
-  if (!trimmedInput) return "";
+const extractYouTubeVideoId = (url = "") => {
+  if (!url || typeof url !== "string") return "";
 
-  const fileId = extractGoogleDriveFileId(trimmedInput);
-  if (!fileId) return trimmedInput;
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return "";
 
-  return buildGoogleDrivePreviewUrl(fileId);
+  // youtu.be/VIDEO_ID
+  let match = trimmedUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
+  if (match?.[1]) return match[1];
+
+  // youtube.com/watch?v=VIDEO_ID
+  match = trimmedUrl.match(/[?&]v=([a-zA-Z0-9_-]{6,})/);
+  if (match?.[1]) return match[1];
+
+  // youtube.com/embed/VIDEO_ID
+  match = trimmedUrl.match(/\/embed\/([a-zA-Z0-9_-]{6,})/);
+  if (match?.[1]) return match[1];
+
+  // youtube.com/shorts/VIDEO_ID
+  match = trimmedUrl.match(/\/shorts\/([a-zA-Z0-9_-]{6,})/);
+  if (match?.[1]) return match[1];
+
+  return "";
+};
+
+const buildYouTubeEmbedUrl = (videoId = "") => {
+  const trimmedVideoId = typeof videoId === "string" ? videoId.trim() : "";
+  if (!trimmedVideoId) return "";
+
+  return `https://www.youtube-nocookie.com/embed/${trimmedVideoId}?rel=0&modestbranding=1&controls=1`;
 };
 
 const isGoogleDriveLink = (input = "") => {
@@ -47,9 +69,46 @@ const isGoogleDriveLink = (input = "") => {
   );
 };
 
+const isYouTubeLink = (input = "") => {
+  if (!input || typeof input !== "string") return false;
+
+  const trimmedInput = input.trim().toLowerCase();
+
+  return (
+    trimmedInput.includes("youtube.com") ||
+    trimmedInput.includes("youtu.be")
+  );
+};
+
+const convertVideoUrlToEmbedUrl = (input = "") => {
+  const trimmedInput = typeof input === "string" ? input.trim() : "";
+  if (!trimmedInput) return "";
+
+  if (isGoogleDriveLink(trimmedInput)) {
+    const fileId = extractGoogleDriveFileId(trimmedInput);
+    return fileId ? buildGoogleDrivePreviewUrl(fileId) : trimmedInput;
+  }
+
+  if (isYouTubeLink(trimmedInput)) {
+    const videoId = extractYouTubeVideoId(trimmedInput);
+    return videoId ? buildYouTubeEmbedUrl(videoId) : trimmedInput;
+  }
+
+  return trimmedInput;
+};
+
+// backward compatibility
+const convertGoogleDriveToPreviewUrl = (input = "") => {
+  return convertVideoUrlToEmbedUrl(input);
+};
+
 module.exports = {
   extractGoogleDriveFileId,
   buildGoogleDrivePreviewUrl,
-  convertGoogleDriveToPreviewUrl,
+  extractYouTubeVideoId,
+  buildYouTubeEmbedUrl,
   isGoogleDriveLink,
+  isYouTubeLink,
+  convertVideoUrlToEmbedUrl,
+  convertGoogleDriveToPreviewUrl,
 };
