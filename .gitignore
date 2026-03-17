@@ -2,3 +2,10 @@ node_modules
 .env
 build
 dist
+
+uploads/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.pdf
