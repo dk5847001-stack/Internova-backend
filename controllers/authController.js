@@ -449,7 +449,7 @@ exports.googleLogin = async (req, res) => {
       user = await User.create({
         name,
         email,
-        password: "",
+        password: undefined,
         phone: "",
         role: "user",
         authProvider: "google",
