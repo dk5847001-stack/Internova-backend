@@ -3,6 +3,9 @@ node_modules
 build
 dist
 
+
+node_modules/
+.env
 uploads/
 *.mp4
 *.mov
