@@ -1,11 +1,9 @@
 const nodemailer = require("nodemailer");
-const dns = require("dns");
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || "smtp.gmail.com",
+  host: process.env.EMAIL_HOST || "smtp-relay.brevo.com",
   port: Number(process.env.EMAIL_PORT) || 587,
   secure: false,
-  requireTLS: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -13,12 +11,6 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 30000,
   greetingTimeout: 30000,
   socketTimeout: 30000,
-  tls: {
-    rejectUnauthorized: true,
-  },
-  dnsLookup: (hostname, options, callback) => {
-    return dns.lookup(hostname, { family: 4 }, callback);
-  },
 });
 
 const sendEmail = async ({ to, subject, html, text }) => {
@@ -26,8 +18,12 @@ const sendEmail = async ({ to, subject, html, text }) => {
     throw new Error("Email configuration is missing");
   }
 
+  if (!process.env.EMAIL_FROM) {
+    throw new Error("EMAIL_FROM is missing");
+  }
+
   await transporter.sendMail({
-    from: `"Internova" <${process.env.EMAIL_USER}>`,
+    from: process.env.EMAIL_FROM,
     to,
     subject,
     html,
