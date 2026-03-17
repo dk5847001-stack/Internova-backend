@@ -6,7 +6,6 @@ const admin = require("../config/firebaseAdmin");
 const sendEmail = require("../utils/sendEmail");
 const { generateOtp, getOtpExpiryTime } = require("../utils/authOtp");
 
-
 const normalizeEmail = (email = "") => {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 };
@@ -55,8 +54,13 @@ const createOtpHash = (otp) => {
   return crypto.createHash("sha256").update(String(otp)).digest("hex");
 };
 
+const createResetTokenHash = (token) => {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+};
+
 const sendVerificationOtpEmail = async ({ email, name, otp }) => {
   const subject = "Internova Email Verification OTP";
+
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
       <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 18px; overflow: hidden; border: 1px solid #e2e8f0;">
@@ -90,6 +94,59 @@ const sendVerificationOtpEmail = async ({ email, name, otp }) => {
   `;
 
   const text = `Your Internova email verification OTP is ${otp}. It is valid for 10 minutes.`;
+
+  await sendEmail({
+    to: email,
+    subject,
+    html,
+    text,
+  });
+};
+
+const sendResetPasswordEmail = async ({ email, name, resetUrl }) => {
+  const subject = "Internova Password Reset";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
+      <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 18px; overflow: hidden; border: 1px solid #e2e8f0;">
+        <div style="padding: 24px 28px; background: linear-gradient(135deg, #0b1736 0%, #142850 45%, #1d4ed8 100%); color: #ffffff;">
+          <h2 style="margin: 0; font-size: 24px;">Internova</h2>
+          <p style="margin: 8px 0 0; opacity: 0.9;">Reset Your Password</p>
+        </div>
+
+        <div style="padding: 28px;">
+          <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${name || "User"},</p>
+          <p style="font-size: 15px; color: #475569; line-height: 1.7;">
+            We received a request to reset your Internova account password.
+          </p>
+
+          <div style="margin: 24px 0; text-align: center;">
+            <a href="${resetUrl}"
+              style="display: inline-block; padding: 14px 24px; border-radius: 14px; text-decoration: none; background: linear-gradient(135deg, #0b1736 0%, #142850 40%, #1d4ed8 100%); color: #ffffff; font-weight: 700;">
+              Reset Password
+            </a>
+          </div>
+
+          <p style="font-size: 14px; color: #475569; line-height: 1.7;">
+            This reset link is valid for <strong>15 minutes</strong>.
+          </p>
+
+          <p style="font-size: 14px; color: #64748b; line-height: 1.7;">
+            If the button above does not work, use this link:
+          </p>
+          <p style="font-size: 13px; color: #1d4ed8; word-break: break-all;">
+            ${resetUrl}
+          </p>
+
+          <p style="font-size: 14px; color: #64748b; line-height: 1.7; margin-bottom: 0;">
+            If you did not request this, you can ignore this email.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const text = `Reset your Internova password using this link: ${resetUrl}. This link is valid for 15 minutes.`;
 
   await sendEmail({
     to: email,
@@ -192,7 +249,9 @@ exports.verifyEmailOtp = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select("+emailOtp +emailOtpExpires");
+    const user = await User.findOne({ email }).select(
+      "+emailOtp +emailOtpExpires"
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -202,6 +261,9 @@ exports.verifyEmailOtp = async (req, res) => {
     }
 
     if (user.isEmailVerified) {
+      user.lastLoginAt = new Date();
+      await user.save();
+
       return res.status(200).json({
         success: true,
         message: "Email is already verified",
@@ -267,7 +329,9 @@ exports.resendEmailOtp = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select("+emailOtp +emailOtpExpires");
+    const user = await User.findOne({ email }).select(
+      "+emailOtp +emailOtpExpires"
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -308,6 +372,140 @@ exports.resendEmailOtp = async (req, res) => {
   }
 };
 
+// ================= FORGOT PASSWORD =================
+exports.forgotPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const genericResponse = {
+      success: true,
+      message: "If an account exists with this email, a reset link will be sent.",
+    };
+
+    const user = await User.findOne({ email }).select(
+      "+resetPasswordToken +resetPasswordExpires"
+    );
+
+    if (!user) {
+      return res.status(200).json(genericResponse);
+    }
+
+    if (user.authProvider === "google" && !user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "This account uses Google login. Please continue with Google.",
+      });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = createResetTokenHash(rawToken);
+
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+
+    await user.save();
+
+    const frontendBase =
+      process.env.FRONTEND_URL ||
+      process.env.CLIENT_URL ||
+      "http://localhost:3000";
+
+    const resetUrl = `${frontendBase}/reset-password/${rawToken}?email=${encodeURIComponent(
+      user.email
+    )}`;
+
+    await sendResetPasswordEmail({
+      email: user.email,
+      name: user.name,
+      resetUrl,
+    });
+
+    return res.status(200).json(genericResponse);
+  } catch (error) {
+    console.error("FORGOT PASSWORD ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to process forgot password request",
+    });
+  }
+};
+
+// ================= RESET PASSWORD =================
+exports.resetPassword = async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const token =
+      typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const password =
+      typeof req.body?.password === "string" ? req.body.password : "";
+
+    if (!email || !token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email, token and new password are required",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    const hashedToken = createResetTokenHash(token);
+
+    const user = await User.findOne({
+      email,
+      resetPasswordToken: hashedToken,
+    }).select("+resetPasswordToken +resetPasswordExpires");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset link",
+      });
+    }
+
+    if (
+      !user.resetPasswordExpires ||
+      new Date() > new Date(user.resetPasswordExpires)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Reset link has expired. Please request a new one.",
+      });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.resetPasswordToken = "";
+    user.resetPasswordExpires = null;
+    user.authProvider = "local";
+    user.isEmailVerified = true;
+    user.lastLoginAt = new Date();
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successful. Please login with your new password.",
+    });
+  } catch (error) {
+    console.error("RESET PASSWORD ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to reset password",
+    });
+  }
+};
+
 // ================= LOGIN =================
 exports.loginUser = async (req, res) => {
   try {
@@ -322,7 +520,9 @@ exports.loginUser = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select("+emailOtp +emailOtpExpires");
+    const user = await User.findOne({ email }).select(
+      "+emailOtp +emailOtpExpires"
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -358,6 +558,7 @@ exports.loginUser = async (req, res) => {
       const otp = generateOtp();
       user.emailOtp = createOtpHash(otp);
       user.emailOtpExpires = getOtpExpiryTime(10);
+
       await user.save();
 
       await sendVerificationOtpEmail({
@@ -368,8 +569,7 @@ exports.loginUser = async (req, res) => {
 
       return res.status(403).json({
         success: false,
-        message:
-          "Email not verified. A new OTP has been sent to your email.",
+        message: "Email not verified. A new OTP has been sent to your email.",
         requiresEmailVerification: true,
         email: user.email,
       });
