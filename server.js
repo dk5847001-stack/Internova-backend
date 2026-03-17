@@ -34,13 +34,19 @@ app.set("trust proxy", 1);
 const allowedOrigins = [
   "http://localhost:3000",
   "https://internova-frontend.onrender.com",
+  "https://www.internovatech.in",
+  "https://internovatech.in",
 ];
 
-if (
-  process.env.CLIENT_URL &&
-  !allowedOrigins.includes(process.env.CLIENT_URL)
-) {
+if (process.env.CLIENT_URL && !allowedOrigins.includes(process.env.CLIENT_URL)) {
   allowedOrigins.push(process.env.CLIENT_URL);
+}
+
+if (
+  process.env.FRONTEND_URL &&
+  !allowedOrigins.includes(process.env.FRONTEND_URL)
+) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
 /* =========================

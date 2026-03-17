@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "Name is required"],
       trim: true,
     },
+
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -15,11 +16,20 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       index: true,
     },
+
     password: {
       type: String,
-      required: [true, "Password is required"],
+      default: "",
       minlength: 6,
     },
+
+    phone: {
+      type: String,
+      default: "",
+      trim: true,
+      index: true,
+    },
+
     role: {
       type: String,
       enum: ["user", "admin"],
@@ -27,7 +37,43 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Admin analytics ke liye useful
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+      index: true,
+    },
+
+    googleId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    avatar: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    emailOtp: {
+      type: String,
+      default: "",
+      select: false,
+    },
+
+    emailOtpExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     lastLoginAt: {
       type: Date,
       default: null,
@@ -39,17 +85,13 @@ const userSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
-
-    avatar: {
-      type: String,
-      default: "",
-      trim: true,
-    },
   },
   { timestamps: true }
 );
 
 userSchema.index({ createdAt: -1 });
 userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ email: 1, authProvider: 1 });
+userSchema.index({ phone: 1 });
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);
