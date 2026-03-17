@@ -10,7 +10,8 @@ const {
 
 const { protect } = require("../middleware/authMiddleware");
 
-// Generate certificate
+// Generate certificate   
+
 router.post("/generate/:internshipId", protect, generateCertificate);
 
 // Check certificate eligibility
