@@ -2,13 +2,10 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { OAuth2Client } = require("google-auth-library");
+const admin = require("../config/firebaseAdmin");
 const sendEmail = require("../utils/sendEmail");
 const { generateOtp, getOtpExpiryTime } = require("../utils/authOtp");
 
-const googleClient = process.env.GOOGLE_CLIENT_ID
-  ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
-  : null;
 
 const normalizeEmail = (email = "") => {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -409,32 +406,20 @@ exports.googleLogin = async (req, res) => {
       });
     }
 
-    if (!googleClient || !process.env.GOOGLE_CLIENT_ID) {
-      return res.status(500).json({
-        success: false,
-        message: "Google login is not configured on the server",
-      });
-    }
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    const email = normalizeEmail(decodedToken.email || "");
+    const googleId = decodedToken.uid || "";
+    const name = normalizeName(decodedToken.name || "Google User");
+    const avatar = decodedToken.picture || "";
+    const emailVerified = Boolean(decodedToken.email_verified);
 
-    const payload = ticket.getPayload();
-
-    if (!payload?.email) {
+    if (!email) {
       return res.status(400).json({
         success: false,
         message: "Unable to fetch email from Google account",
       });
     }
-
-    const email = normalizeEmail(payload.email);
-    const googleId = payload.sub || "";
-    const name = normalizeName(payload.name || "Google User");
-    const avatar = payload.picture || "";
-    const emailVerified = Boolean(payload.email_verified);
 
     let user = await User.findOne({ email });
 
@@ -454,10 +439,7 @@ exports.googleLogin = async (req, res) => {
         user.avatar = avatar;
       }
 
-      if (user.authProvider !== "google" && !user.password) {
-        user.authProvider = "google";
-      }
-
+      user.authProvider = "google";
       user.name = user.name || name;
       user.isEmailVerified = emailVerified || user.isEmailVerified;
       user.lastLoginAt = new Date();

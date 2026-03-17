@@ -92,6 +92,5 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ createdAt: -1 });
 userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ email: 1, authProvider: 1 });
-userSchema.index({ phone: 1 });
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);
