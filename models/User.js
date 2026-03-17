@@ -19,8 +19,14 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      default: "",
-      minlength: 6,
+      default: undefined,
+      validate: {
+        validator: function (value) {
+          if (this.authProvider === "google") return true;
+          return typeof value === "string" && value.length >= 6;
+        },
+        message: "Password must be at least 6 characters long",
+      },
     },
 
     phone: {
