@@ -14,6 +14,16 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const internshipPurchaseQuery = (userId, internshipId) => ({
+  userId,
+  internshipId,
+  paymentStatus: "paid",
+  $or: [
+    { purchaseType: "internship" },
+    { purchaseType: { $exists: false } },
+  ],
+});
+
 exports.createOrder = async (req, res) => {
   try {
     const { internshipId, durationLabel, purchaseType = "internship" } = req.body;
@@ -42,12 +52,9 @@ exports.createOrder = async (req, res) => {
     // UNLOCK ALL ADDON PAYMENT
     // =========================
     if (safePurchaseType === "unlock_all") {
-      const basePaidPurchase = await Purchase.findOne({
-        userId,
-        internshipId,
-        purchaseType: "internship",
-        paymentStatus: "paid",
-      }).sort({ createdAt: -1 });
+      const basePaidPurchase = await Purchase.findOne(
+        internshipPurchaseQuery(userId, internshipId)
+      ).sort({ createdAt: -1 });
 
       if (!basePaidPurchase) {
         return res.status(403).json({
@@ -170,8 +177,11 @@ exports.createOrder = async (req, res) => {
       userId,
       internshipId,
       durationLabel: selectedDuration.label,
-      purchaseType: "internship",
       paymentStatus: "paid",
+      $or: [
+        { purchaseType: "internship" },
+        { purchaseType: { $exists: false } },
+      ],
     });
 
     if (existingPaidPurchase) {
@@ -281,7 +291,6 @@ exports.verifyPayment = async (req, res) => {
     purchase.paymentStatus = "paid";
     await purchase.save();
 
-    // unlock-all verified hone par access activate karo
     if (purchase.purchaseType === "unlock_all") {
       const progress = await Progress.findOne({
         userId: purchase.userId,

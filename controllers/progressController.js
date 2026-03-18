@@ -179,7 +179,10 @@ const applyDerivedProgressFields = async (
     progressDoc.completedDays >= toNumber(progressDoc.selectedDurationDays, 0);
 
   progressDoc.miniTestUnlocked =
-    progressDoc.overallProgress >= toNumber(internship.miniTestUnlockProgress, 80);
+    progressDoc.overallProgress >= toNumber(
+      internship.miniTestUnlockProgress,
+      80
+    );
 
   progressDoc.certificateEligible =
     Boolean(internship.certificateEnabled) &&
@@ -235,6 +238,16 @@ const ensureProgressDoc = async ({ internship, internshipId, purchase, userId })
   return progress;
 };
 
+const internshipPurchaseQuery = (userId, internshipId) => ({
+  userId,
+  internshipId,
+  paymentStatus: "paid",
+  $or: [
+    { purchaseType: "internship" },
+    { purchaseType: { $exists: false } },
+  ],
+});
+
 // @desc   Get full course progress page data
 // @route  GET /api/progress/course/:internshipId
 // @access Private
@@ -258,12 +271,9 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      purchaseType: "internship",
-      paymentStatus: "paid",
-    }).sort({ createdAt: -1 });
+    const purchase = await Purchase.findOne(
+      internshipPurchaseQuery(userId, internshipId)
+    ).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
@@ -347,12 +357,9 @@ exports.updateVideoProgress = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      purchaseType: "internship",
-      paymentStatus: "paid",
-    }).sort({ createdAt: -1 });
+    const purchase = await Purchase.findOne(
+      internshipPurchaseQuery(userId, internshipId)
+    ).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
@@ -453,12 +460,9 @@ exports.unlockAllModules = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      purchaseType: "internship",
-      paymentStatus: "paid",
-    }).sort({ createdAt: -1 });
+    const purchase = await Purchase.findOne(
+      internshipPurchaseQuery(userId, internshipId)
+    ).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
@@ -523,12 +527,9 @@ exports.getEligibilityStatus = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      purchaseType: "internship",
-      paymentStatus: "paid",
-    }).sort({ createdAt: -1 });
+    const purchase = await Purchase.findOne(
+      internshipPurchaseQuery(userId, internshipId)
+    ).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({

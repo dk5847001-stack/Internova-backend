@@ -9,7 +9,10 @@ exports.getMyPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find({
       userId: req.user.id,
-      purchaseType: "internship",
+      $or: [
+        { purchaseType: "internship" },
+        { purchaseType: { $exists: false } },
+      ],
     })
       .populate("internshipId")
       .sort({ createdAt: -1 });
@@ -50,7 +53,7 @@ exports.getMyPurchases = async (req, res) => {
       purchases: enhancedPurchases,
     });
   } catch (error) {
-    console.error("GET MY Enrollments ERROR:", error);
+    console.error("GET MY ENROLLMENTS ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch enrollments",
@@ -65,8 +68,11 @@ exports.downloadOfferLetter = async (req, res) => {
     const purchase = await Purchase.findOne({
       _id: purchaseId,
       userId: req.user.id,
-      purchaseType: "internship",
       paymentStatus: "paid",
+      $or: [
+        { purchaseType: "internship" },
+        { purchaseType: { $exists: false } },
+      ],
     }).populate("internshipId");
 
     if (!purchase) {
@@ -168,9 +174,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .roundedRect(24, 24, pageWidth - 48, pageHeight - 48, 16)
       .stroke();
 
-    doc
-      .roundedRect(24, 24, pageWidth - 48, 8, 4)
-      .fill(colors.navy);
+    doc.roundedRect(24, 24, pageWidth - 48, 8, 4).fill(colors.navy);
 
     const headerY = 42;
     const headerH = 82;
@@ -234,11 +238,7 @@ exports.downloadOfferLetter = async (req, res) => {
 
     let y = metaY + metaH + 14;
 
-    doc
-      .font("Helvetica")
-      .fontSize(10.3)
-      .fillColor(colors.soft)
-      .text("To,", left, y);
+    doc.font("Helvetica").fontSize(10.3).fillColor(colors.soft).text("To,", left, y);
 
     y += 14;
 
