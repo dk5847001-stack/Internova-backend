@@ -14,13 +14,27 @@ const purchaseSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    purchaseType: {
+      type: String,
+      enum: ["internship", "unlock_all"],
+      default: "internship",
+      index: true,
+    },
+
+    parentPurchaseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Purchase",
+      default: null,
+      index: true,
+    },
+
     durationLabel: {
       type: String,
       required: true,
       trim: true,
     },
 
-    // progress system ke liye kaam aayega
     selectedDurationDays: {
       type: Number,
       default: 30,
@@ -32,6 +46,7 @@ const purchaseSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+
     razorpayOrderId: {
       type: String,
       required: true,
@@ -49,6 +64,7 @@ const purchaseSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
     paymentStatus: {
       type: String,
       enum: ["created", "paid", "failed"],
@@ -59,7 +75,13 @@ const purchaseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-purchaseSchema.index({ userId: 1, internshipId: 1, paymentStatus: 1 });
+purchaseSchema.index({
+  userId: 1,
+  internshipId: 1,
+  paymentStatus: 1,
+  purchaseType: 1,
+});
+
 purchaseSchema.index({ createdAt: -1 });
 purchaseSchema.index({ internshipId: 1, createdAt: -1 });
 

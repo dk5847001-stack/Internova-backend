@@ -9,13 +9,10 @@ exports.getMyPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find({
       userId: req.user.id,
+      purchaseType: "internship",
     })
       .populate("internshipId")
       .sort({ createdAt: -1 });
-
-    console.log("REQ USER ID:", req.user.id);
-    console.log("PURCHASES FOUND:", purchases.length);
-    console.log("PURCHASES DATA:", purchases);
 
     const formatDate = (date) =>
       new Date(date).toLocaleDateString("en-IN", {
@@ -68,6 +65,7 @@ exports.downloadOfferLetter = async (req, res) => {
     const purchase = await Purchase.findOne({
       _id: purchaseId,
       userId: req.user.id,
+      purchaseType: "internship",
       paymentStatus: "paid",
     }).populate("internshipId");
 

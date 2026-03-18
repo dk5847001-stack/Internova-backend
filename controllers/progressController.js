@@ -148,7 +148,12 @@ const calculateProgressStats = (internship, progressDoc) => {
   };
 };
 
-const applyDerivedProgressFields = async (internship, progressDoc, userId, internshipId) => {
+const applyDerivedProgressFields = async (
+  internship,
+  progressDoc,
+  userId,
+  internshipId
+) => {
   const latestTest = await TestResult.findOne({
     userId,
     internshipId,
@@ -216,6 +221,17 @@ const ensureProgressDoc = async ({ internship, internshipId, purchase, userId })
     });
   }
 
+  const paidUnlockAllPurchase = await Purchase.findOne({
+    userId,
+    internshipId,
+    purchaseType: "unlock_all",
+    paymentStatus: "paid",
+  });
+
+  if (paidUnlockAllPurchase && !progress.unlockAllPurchased) {
+    progress.unlockAllPurchased = true;
+  }
+
   return progress;
 };
 
@@ -245,8 +261,9 @@ exports.getCourseProgress = async (req, res) => {
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
+      purchaseType: "internship",
       paymentStatus: "paid",
-    });
+    }).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
@@ -333,8 +350,9 @@ exports.updateVideoProgress = async (req, res) => {
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
+      purchaseType: "internship",
       paymentStatus: "paid",
-    });
+    }).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
@@ -419,7 +437,7 @@ exports.updateVideoProgress = async (req, res) => {
   }
 };
 
-// @desc   Unlock all modules
+// @desc   Unlock all modules only after paid unlock-all addon
 // @route  PATCH /api/progress/course/:internshipId/unlock-all
 // @access Private
 exports.unlockAllModules = async (req, res) => {
@@ -438,13 +456,28 @@ exports.unlockAllModules = async (req, res) => {
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
+      purchaseType: "internship",
       paymentStatus: "paid",
-    });
+    }).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
+      });
+    }
+
+    const paidUnlockAllPurchase = await Purchase.findOne({
+      userId,
+      internshipId,
+      purchaseType: "unlock_all",
+      paymentStatus: "paid",
+    });
+
+    if (!paidUnlockAllPurchase) {
+      return res.status(403).json({
+        success: false,
+        message: "Unlock-all payment required before unlocking all modules",
       });
     }
 
@@ -493,8 +526,9 @@ exports.getEligibilityStatus = async (req, res) => {
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
+      purchaseType: "internship",
       paymentStatus: "paid",
-    });
+    }).sort({ createdAt: -1 });
 
     if (!purchase) {
       return res.status(403).json({
