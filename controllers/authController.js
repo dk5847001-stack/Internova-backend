@@ -734,9 +734,12 @@ exports.getUserNotifications = async (req, res) => {
         _id: item._id,
         title: item.title || "Notification",
         message: item.message || "",
-        type: item.type || "info",
+        type: item.type || "general",
         read: Boolean(item.read),
         createdAt: item.createdAt || null,
+        metadata: {
+          contactMessageId: item?.metadata?.contactMessageId || null,
+        },
       })
     );
 

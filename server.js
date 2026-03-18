@@ -16,9 +16,7 @@ const progressRoutes = require("./routes/progressRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
 const adminRoutes = require("./routes/adminRoutes");
-
 const contactRoutes = require("./routes/contactRoutes");
-const notificationRoutes = require("./routes/notificationRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
 
 const app = express();
@@ -69,7 +67,7 @@ app.use(
 ========================= */
 app.use(
   cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
@@ -114,7 +112,7 @@ app.get("/api/health", (req, res) => {
 });
 
 /* =========================
-   API Routes
+   Core API Routes
 ========================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/internships", internshipRoutes);
@@ -126,36 +124,14 @@ app.use("/api/certificates", certificateRoutes);
 app.use("/api/admin", adminRoutes);
 
 /* =========================
-   Contact / Notification / Subscribers
+   Contact Routes
 ========================= */
-
-/*
-  Contact form frontend currently calls:
-  POST /api/contact-messages
-*/
+app.use("/api/contact", contactRoutes);
 app.use("/api/contact-messages", contactRoutes);
 
-/*
-  Optional legacy alias support
-*/
-app.use("/api/contact", contactRoutes);
-
-/*
-  Navbar frontend currently calls:
-  GET /api/auth/notifications
-  PATCH /api/auth/notifications/read-all
-*/
-app.use("/api/auth", notificationRoutes);
-
-/*
-  Optional direct notification alias support
-*/
-app.use("/api/notifications", notificationRoutes);
-
-/*
-  Footer frontend currently calls:
-  POST /api/subscribers/subscribe
-*/
+/* =========================
+   Subscriber Routes
+========================= */
 app.use("/api/subscribers", subscriberRoutes);
 
 /* =========================

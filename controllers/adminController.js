@@ -221,9 +221,9 @@ exports.getAdminOverview = async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10),
       ContactMessage.find()
-        .sort({ updatedAt: -1 })
-        .limit(6)
-        .select("name email subject status createdAt updatedAt"),
+  .sort({ updatedAt: -1 })
+  .limit(6)
+  .select("name email subject message status createdAt updatedAt adminReply"),
     ]);
 
     const totalPrograms = internships.length;
