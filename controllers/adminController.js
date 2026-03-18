@@ -741,6 +741,7 @@ exports.getAdminContactMessages = async (req, res) => {
 };
 
 // POST /api/admin/contact-messages/:messageId/reply
+// POST /api/admin/contact-messages/:messageId/reply
 exports.replyToContactMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -760,6 +761,16 @@ exports.replyToContactMessage = async (req, res) => {
         success: false,
         message: "Contact message not found",
       });
+    }
+
+    if (!messageDoc.userId && messageDoc.email) {
+      const linkedUser = await User.findOne({
+        email: String(messageDoc.email).trim().toLowerCase(),
+      }).select("_id");
+
+      if (linkedUser?._id) {
+        messageDoc.userId = linkedUser._id;
+      }
     }
 
     messageDoc.adminReply = {

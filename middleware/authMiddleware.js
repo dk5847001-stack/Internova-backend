@@ -1,6 +1,45 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+const attachUserFromToken = async (req) => {
+  let token = null;
+
+  const authHeader = req.headers.authorization || "";
+
+  if (authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1]?.trim();
+  }
+
+  if (!token || !process.env.JWT_SECRET) {
+    return null;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id || decoded._id || null;
+
+    if (!userId) return null;
+
+    const user = await User.findById(userId).select(
+      "_id name email role isActive isEmailVerified"
+    );
+
+    if (!user || user.isActive === false) return null;
+
+    return {
+      id: user._id,
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role || "user",
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
 exports.protect = async (req, res, next) => {
   try {
     let token = null;
@@ -86,6 +125,18 @@ exports.protect = async (req, res, next) => {
       success: false,
       message: "Invalid or expired token",
     });
+  }
+};
+
+exports.optionalProtect = async (req, res, next) => {
+  try {
+    const user = await attachUserFromToken(req);
+    if (user) {
+      req.user = user;
+    }
+    next();
+  } catch (error) {
+    next();
   }
 };
 

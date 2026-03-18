@@ -38,6 +38,16 @@ const pushNotificationToUser = async ({
   }
 };
 
+const resolveUserIdForMessage = async ({ explicitUserId, email }) => {
+  if (explicitUserId) return explicitUserId;
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  const existingUser = await User.findOne({ email: normalizedEmail }).select("_id");
+  return existingUser?._id || null;
+};
+
 /* =========================
    CREATE CONTACT MESSAGE
 ========================= */
@@ -55,8 +65,13 @@ exports.createContactMessage = async (req, res) => {
       });
     }
 
+    const resolvedUserId = await resolveUserIdForMessage({
+      explicitUserId: req.user?._id || req.user?.id || null,
+      email,
+    });
+
     const item = await ContactMessage.create({
-      userId: req.user?._id || req.user?.id || null,
+      userId: resolvedUserId,
       name,
       email,
       subject,
@@ -93,8 +108,13 @@ exports.createContactMessage = async (req, res) => {
 ========================= */
 exports.getMyContactMessages = async (req, res) => {
   try {
+    const userEmail = normalizeEmail(req.user?.email || "");
+
     const items = await ContactMessage.find({
-      userId: req.user._id || req.user.id,
+      $or: [
+        { userId: req.user._id || req.user.id },
+        { email: userEmail },
+      ],
     })
       .populate("adminReply.repliedBy", "name email")
       .sort({ updatedAt: -1 });
@@ -119,6 +139,7 @@ exports.replyToContactMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
     const replyMessage = normalizeText(req.body?.message);
+    const userEmail = normalizeEmail(req.user?.email || "");
 
     if (!replyMessage) {
       return res.status(400).json({
@@ -129,7 +150,10 @@ exports.replyToContactMessage = async (req, res) => {
 
     const item = await ContactMessage.findOne({
       _id: messageId,
-      userId: req.user._id || req.user.id,
+      $or: [
+        { userId: req.user._id || req.user.id },
+        { email: userEmail },
+      ],
     });
 
     if (!item) {
@@ -137,6 +161,10 @@ exports.replyToContactMessage = async (req, res) => {
         success: false,
         message: "Message thread not found",
       });
+    }
+
+    if (!item.userId) {
+      item.userId = req.user._id || req.user.id;
     }
 
     item.message = `${item.message}\n\n[USER REPLY - ${new Date().toISOString()}]\n${replyMessage}`;

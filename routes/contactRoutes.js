@@ -7,12 +7,15 @@ const {
   replyToContactMessage,
 } = require("../controllers/contactController");
 
-const { protect } = require("../middleware/authMiddleware");
+const {
+  protect,
+  optionalProtect,
+} = require("../middleware/authMiddleware");
 
 /* =========================
-   Public contact form submit
+   Public + logged-in contact form submit
 ========================= */
-router.post("/", createContactMessage);
+router.post("/", optionalProtect, createContactMessage);
 
 /* =========================
    Logged in user contact inbox
