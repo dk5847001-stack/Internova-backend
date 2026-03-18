@@ -7,6 +7,7 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const path = require("path");
 const connectDB = require("./config/db");
+
 const authRoutes = require("./routes/authRoutes");
 const internshipRoutes = require("./routes/internshipRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
@@ -15,6 +16,10 @@ const progressRoutes = require("./routes/progressRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+
+const contactRoutes = require("./routes/contactRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const subscriberRoutes = require("./routes/subscriberRoutes");
 
 const app = express();
 
@@ -33,6 +38,7 @@ app.set("trust proxy", 1);
 ========================= */
 const allowedOrigins = [
   "http://localhost:3000",
+  "http://127.0.0.1:3000",
   "https://internova-frontend.onrender.com",
   "https://www.internovatech.in",
   "https://internovatech.in",
@@ -95,7 +101,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
    Root / Health
 ========================= */
 app.get("/", (req, res) => {
-  res.send("API is running...");
+  res.status(200).send("API is running...");
 });
 
 app.get("/api/health", (req, res) => {
@@ -120,12 +126,46 @@ app.use("/api/certificates", certificateRoutes);
 app.use("/api/admin", adminRoutes);
 
 /* =========================
+   Contact / Notification / Subscribers
+========================= */
+
+/*
+  Contact form frontend currently calls:
+  POST /api/contact-messages
+*/
+app.use("/api/contact-messages", contactRoutes);
+
+/*
+  Optional legacy alias support
+*/
+app.use("/api/contact", contactRoutes);
+
+/*
+  Navbar frontend currently calls:
+  GET /api/auth/notifications
+  PATCH /api/auth/notifications/read-all
+*/
+app.use("/api/auth", notificationRoutes);
+
+/*
+  Optional direct notification alias support
+*/
+app.use("/api/notifications", notificationRoutes);
+
+/*
+  Footer frontend currently calls:
+  POST /api/subscribers/subscribe
+*/
+app.use("/api/subscribers", subscriberRoutes);
+
+/* =========================
    404 Handler
 ========================= */
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
+    path: req.originalUrl,
   });
 });
 
@@ -142,7 +182,7 @@ app.use((err, req, res, next) => {
     });
   }
 
-  res.status(err.status || 500).json({
+  return res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal server error",
   });

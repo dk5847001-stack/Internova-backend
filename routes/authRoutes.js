@@ -10,6 +10,8 @@ const {
   forgotPassword,
   resetPassword,
   googleLogin,
+  getUserNotifications,
+  markAllNotificationsAsRead,
 } = require("../controllers/authController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -21,6 +23,13 @@ router.post("/resend-email-otp", resendEmailOtp);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 router.post("/google-login", googleLogin);
+
 router.get("/me", protect, getMyProfile);
+
+/* =========================
+   Notifications
+========================= */
+router.get("/notifications", protect, getUserNotifications);
+router.patch("/notifications/read-all", protect, markAllNotificationsAsRead);
 
 module.exports = router;

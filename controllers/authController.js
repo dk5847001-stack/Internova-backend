@@ -19,6 +19,19 @@ const normalizePhone = (phone = "") => {
   return phone.replace(/\s+/g, "").trim();
 };
 
+const getUnreadNotificationsCount = (user) => {
+  if (!Array.isArray(user?.notifications)) return 0;
+  return user.notifications.filter((item) => !item.read).length;
+};
+
+const sortNotificationsDesc = (notifications = []) => {
+  return [...notifications].sort((a, b) => {
+    const aTime = new Date(a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+};
+
 const generateToken = (user) => {
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET is missing");
@@ -48,6 +61,7 @@ const buildSafeUser = (user) => ({
   isActive: typeof user.isActive === "boolean" ? user.isActive : true,
   lastLoginAt: user.lastLoginAt || null,
   createdAt: user.createdAt || null,
+  unreadNotificationsCount: getUnreadNotificationsCount(user),
 });
 
 const createOtpHash = (otp) => {
@@ -211,6 +225,7 @@ exports.registerUser = async (req, res) => {
       isEmailVerified: false,
       emailOtp: createOtpHash(otp),
       emailOtpExpires: getOtpExpiryTime(10),
+      notifications: [],
     });
 
     await sendVerificationOtpEmail({
@@ -658,6 +673,7 @@ exports.googleLogin = async (req, res) => {
         isEmailVerified: emailVerified,
         isActive: true,
         lastLoginAt: new Date(),
+        notifications: [],
       });
     }
 
@@ -697,6 +713,79 @@ exports.getMyProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch profile",
+    });
+  }
+};
+
+// ================= GET USER NOTIFICATIONS =================
+exports.getUserNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("notifications");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const notifications = sortNotificationsDesc(user.notifications || []).map(
+      (item) => ({
+        _id: item._id,
+        title: item.title || "Notification",
+        message: item.message || "",
+        type: item.type || "info",
+        read: Boolean(item.read),
+        createdAt: item.createdAt || null,
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      notifications,
+      unreadCount: notifications.filter((item) => !item.read).length,
+    });
+  } catch (error) {
+    console.error("GET USER NOTIFICATIONS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch notifications",
+    });
+  }
+};
+
+// ================= MARK ALL NOTIFICATIONS AS READ =================
+exports.markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("notifications");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!Array.isArray(user.notifications)) {
+      user.notifications = [];
+    }
+
+    user.notifications = user.notifications.map((item) => ({
+      ...item.toObject(),
+      read: true,
+    }));
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "All notifications marked as read",
+    });
+  } catch (error) {
+    console.error("MARK NOTIFICATIONS READ ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to mark notifications as read",
     });
   }
 };

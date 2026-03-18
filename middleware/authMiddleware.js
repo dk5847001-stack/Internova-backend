@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
 exports.protect = async (req, res, next) => {
   try {
@@ -26,20 +27,42 @@ exports.protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id || decoded._id || null;
 
-    req.user = {
-      ...decoded,
-      id: decoded.id || decoded._id || null,
-      _id: decoded._id || decoded.id || null,
-      role: decoded.role || "user",
-    };
-
-    if (!req.user.id) {
+    if (!userId) {
       return res.status(401).json({
         success: false,
         message: "Invalid token payload",
       });
     }
+
+    const user = await User.findById(userId).select(
+      "_id name email role isActive isEmailVerified"
+    );
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is inactive. Please contact support.",
+      });
+    }
+
+    req.user = {
+      id: user._id,
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role || "user",
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+    };
 
     next();
   } catch (error) {

@@ -1,5 +1,43 @@
 const mongoose = require("mongoose");
 
+const notificationItemSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    message: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    type: {
+      type: String,
+      enum: ["general", "contact_reply", "admin_reply", "system"],
+      default: "general",
+      index: true,
+    },
+    read: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
+    metadata: {
+      contactMessageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null,
+      },
+    },
+  },
+  { _id: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -102,6 +140,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
       index: true,
+    },
+
+    notifications: {
+      type: [notificationItemSchema],
+      default: [],
     },
   },
   { timestamps: true }

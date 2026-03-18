@@ -4,6 +4,8 @@ const Internship = require("../models/Internship");
 const Certificate = require("../models/Certificate");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
+const ContactMessage = require("../models/ContactMessage");
+const Subscriber = require("../models/Subscriber");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -24,7 +26,12 @@ const buildDateRange = (from, to) => {
   return Object.keys(query).length ? query : null;
 };
 
-const buildUserSearchQuery = ({ search = "", role = "All", from = "", to = "" }) => {
+const buildUserSearchQuery = ({
+  search = "",
+  role = "All",
+  from = "",
+  to = "",
+}) => {
   const query = {};
 
   const trimmedSearch = String(search || "").trim();
@@ -45,6 +52,38 @@ const buildUserSearchQuery = ({ search = "", role = "All", from = "", to = "" })
   }
 
   return query;
+};
+
+const pushUserNotification = async ({
+  userId,
+  title,
+  message,
+  type,
+  metadata,
+}) => {
+  try {
+    if (!userId) return;
+
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        notifications: {
+          title: title || "Notification",
+          message: message || "",
+          type: type || "general",
+          read: false,
+          createdAt: new Date(),
+          metadata: metadata || {},
+        },
+      },
+    });
+  } catch (error) {
+    console.error("PUSH USER NOTIFICATION ERROR:", error);
+  }
+};
+
+const getUnreadNotificationCount = (notifications = []) => {
+  if (!Array.isArray(notifications)) return 0;
+  return notifications.filter((item) => !item.read).length;
 };
 
 const getPurchaseBaseData = async (purchaseDocs = []) => {
@@ -152,9 +191,12 @@ exports.getAdminOverview = async (req, res) => {
       failedPurchases,
       totalCertificatesIssued,
       totalQuizPassed,
+      totalSubscribers,
+      totalUnreadContactMessages,
       recentUsers,
       recentInternships,
       recentPurchasesRaw,
+      recentMessages,
     ] = await Promise.all([
       Internship.find().sort({ createdAt: -1 }),
       User.countDocuments(),
@@ -166,18 +208,22 @@ exports.getAdminOverview = async (req, res) => {
       Purchase.countDocuments({ paymentStatus: "failed" }),
       Certificate.countDocuments({ status: "issued" }),
       TestResult.countDocuments({ passed: true }),
+      Subscriber.countDocuments(),
+      ContactMessage.countDocuments({ status: { $in: ["new", "user_replied"] } }),
       User.find()
-        .select("name email role createdAt lastLoginAt isActive")
+        .select("name email role createdAt lastLoginAt isActive notifications")
         .sort({ createdAt: -1 })
         .limit(8),
-      Internship.find()
-        .sort({ createdAt: -1 })
-        .limit(6),
+      Internship.find().sort({ createdAt: -1 }).limit(6),
       Purchase.find()
         .populate("userId", "name email role lastLoginAt isActive createdAt")
         .populate("internshipId", "title branch category")
         .sort({ createdAt: -1 })
         .limit(10),
+      ContactMessage.find()
+        .sort({ updatedAt: -1 })
+        .limit(6)
+        .select("name email subject status createdAt updatedAt"),
     ]);
 
     const totalPrograms = internships.length;
@@ -204,7 +250,6 @@ exports.getAdminOverview = async (req, res) => {
       0
     );
 
-    const recentUsersIds = recentUsers.map((u) => String(u._id));
     const recentUsersPurchaseCounts = await Purchase.aggregate([
       { $match: { userId: { $in: recentUsers.map((u) => u._id) } } },
       { $group: { _id: "$userId", count: { $sum: 1 } } },
@@ -238,6 +283,7 @@ exports.getAdminOverview = async (req, res) => {
       createdAt: user.createdAt,
       purchasesCount: purchaseCountMap.get(String(user._id)) || 0,
       certificatesCount: certificateCountMap.get(String(user._id)) || 0,
+      unreadNotifications: getUnreadNotificationCount(user.notifications),
     }));
 
     const recentInternshipsFormatted = recentInternships.map((item) => ({
@@ -277,10 +323,13 @@ exports.getAdminOverview = async (req, res) => {
         failedPurchases,
         totalCertificatesIssued,
         totalQuizPassed,
+        totalSubscribers,
+        totalUnreadContactMessages,
       },
       recentInternships: recentInternshipsFormatted,
       recentUsers: recentUsersFormatted,
       recentPurchases,
+      recentMessages,
     });
   } catch (error) {
     console.error("GET ADMIN OVERVIEW ERROR:", error);
@@ -307,7 +356,7 @@ exports.getAdminUsers = async (req, res) => {
 
     const [users, total] = await Promise.all([
       User.find(query)
-        .select("name email role createdAt lastLoginAt isActive")
+        .select("name email role createdAt lastLoginAt isActive notifications")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -345,6 +394,7 @@ exports.getAdminUsers = async (req, res) => {
       createdAt: user.createdAt,
       purchasesCount: purchaseCountMap.get(String(user._id)) || 0,
       certificatesCount: certificateCountMap.get(String(user._id)) || 0,
+      unreadNotifications: getUnreadNotificationCount(user.notifications),
     }));
 
     return res.status(200).json({
@@ -588,7 +638,7 @@ exports.resendCertificateFromPurchase = async (req, res) => {
       });
     }
 
-    let certificate = await Certificate.findOne({
+    const certificate = await Certificate.findOne({
       userId,
       internshipId,
       status: "issued",
@@ -626,6 +676,163 @@ exports.resendCertificateFromPurchase = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch certificate for resend",
+    });
+  }
+};
+
+// GET /api/admin/contact-messages
+exports.getAdminContactMessages = async (req, res) => {
+  try {
+    const page = Math.max(1, toNumber(req.query.page, 1));
+    const limit = Math.max(1, Math.min(100, toNumber(req.query.limit, 10)));
+    const skip = (page - 1) * limit;
+
+    const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "All");
+    const from = String(req.query.from || "");
+    const to = String(req.query.to || "");
+
+    const query = {};
+
+    if (status !== "All") {
+      query.status = status;
+    }
+
+    const createdAtRange = buildDateRange(from, to);
+    if (createdAtRange) {
+      query.createdAt = createdAtRange;
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { subject: { $regex: search, $options: "i" } },
+        { message: { $regex: search, $options: "i" } },
+        { "adminReply.message": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      ContactMessage.find(query)
+        .populate("userId", "name email")
+        .populate("adminReply.repliedBy", "name email")
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      ContactMessage.countDocuments(query),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      items,
+    });
+  } catch (error) {
+    console.error("GET ADMIN CONTACT MESSAGES ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch contact messages",
+    });
+  }
+};
+
+// POST /api/admin/contact-messages/:messageId/reply
+exports.replyToContactMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const replyMessage = String(req.body?.replyMessage || "").trim();
+
+    if (!replyMessage) {
+      return res.status(400).json({
+        success: false,
+        message: "Reply message is required",
+      });
+    }
+
+    const messageDoc = await ContactMessage.findById(messageId);
+
+    if (!messageDoc) {
+      return res.status(404).json({
+        success: false,
+        message: "Contact message not found",
+      });
+    }
+
+    messageDoc.adminReply = {
+      message: replyMessage,
+      repliedAt: new Date(),
+      repliedBy: req.user._id || req.user.id,
+    };
+    messageDoc.status = "replied";
+
+    await messageDoc.save();
+
+    if (messageDoc.userId) {
+      await pushUserNotification({
+        userId: messageDoc.userId,
+        title: "Admin replied to your message",
+        message: replyMessage,
+        type: "contact_reply",
+        metadata: {
+          contactMessageId: messageDoc._id,
+        },
+      });
+    }
+
+    const populatedItem = await ContactMessage.findById(messageDoc._id)
+      .populate("userId", "name email")
+      .populate("adminReply.repliedBy", "name email");
+
+    return res.status(200).json({
+      success: true,
+      message: "Reply sent successfully",
+      item: populatedItem,
+    });
+  } catch (error) {
+    console.error("REPLY CONTACT MESSAGE ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reply to contact message",
+    });
+  }
+};
+
+// GET /api/admin/subscribers
+exports.getAdminSubscribers = async (req, res) => {
+  try {
+    const page = Math.max(1, toNumber(req.query.page, 1));
+    const limit = Math.max(1, Math.min(100, toNumber(req.query.limit, 10)));
+    const skip = (page - 1) * limit;
+    const search = String(req.query.search || "").trim();
+
+    const query = {};
+
+    if (search) {
+      query.email = { $regex: search, $options: "i" };
+    }
+
+    const [items, total] = await Promise.all([
+      Subscriber.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Subscriber.countDocuments(query),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      items,
+    });
+  } catch (error) {
+    console.error("GET ADMIN SUBSCRIBERS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch subscribers",
     });
   }
 };
