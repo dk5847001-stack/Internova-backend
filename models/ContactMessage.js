@@ -69,9 +69,11 @@ const contactMessageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-contactMessageSchema.pre("save", function (next) {
+/* =========================
+   Auto update lastMessageAt
+========================= */
+contactMessageSchema.pre("save", function () {
   this.lastMessageAt = new Date();
-  next();
 });
 
 contactMessageSchema.index({ createdAt: -1 });
