@@ -229,7 +229,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.white)
       .font("Helvetica-Bold")
       .fontSize(21)
-      .text("PROGRAM ACCESS LETTER", left, headerY + 18, {
+      .text("INTERNSHIP OFFER LETTER", left, headerY + 18, {
         width: contentWidth,
         align: "center",
       });
