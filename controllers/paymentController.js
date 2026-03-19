@@ -3,6 +3,8 @@ const crypto = require("crypto");
 const Purchase = require("../models/Purchase");
 const Internship = require("../models/Internship");
 const Progress = require("../models/Progress");
+const User = require("../models/User");
+const generatePaymentSlipPdf = require("../utils/generatePaymentSlipPdf");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -283,6 +285,7 @@ exports.verifyPayment = async (req, res) => {
         success: true,
         message: "Payment already verified",
         purchase,
+        slipDownloadUrl: `/api/payments/slip/${purchase._id}`,
       });
     }
 
@@ -307,12 +310,49 @@ exports.verifyPayment = async (req, res) => {
       success: true,
       message: "Payment verified successfully",
       purchase,
+      slipDownloadUrl: `/api/payments/slip/${purchase._id}`,
     });
   } catch (error) {
     console.error("VERIFY PAYMENT ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Payment verification failed",
+    });
+  }
+};
+
+exports.downloadPaymentSlip = async (req, res) => {
+  try {
+    const { purchaseId } = req.params;
+    const userId = req.user.id || req.user._id;
+
+    const purchase = await Purchase.findOne({
+      _id: purchaseId,
+      userId,
+      paymentStatus: "paid",
+    }).populate("internshipId");
+
+    if (!purchase) {
+      return res.status(404).json({
+        success: false,
+        message: "Paid purchase not found",
+      });
+    }
+
+    const user = await User.findById(userId);
+    const internship = purchase.internshipId || null;
+
+    return generatePaymentSlipPdf({
+      res,
+      purchase,
+      user,
+      internship,
+    });
+  } catch (error) {
+    console.error("DOWNLOAD PAYMENT SLIP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate payment slip",
     });
   }
 };

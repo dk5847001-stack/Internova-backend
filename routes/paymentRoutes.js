@@ -3,10 +3,12 @@ const router = express.Router();
 const {
   createOrder,
   verifyPayment,
+  downloadPaymentSlip,
 } = require("../controllers/paymentController");
 const { protect } = require("../middleware/authMiddleware");
 
 router.post("/create-order", protect, createOrder);
 router.post("/verify", protect, verifyPayment);
+router.get("/slip/:purchaseId", protect, downloadPaymentSlip);
 
 module.exports = router;
