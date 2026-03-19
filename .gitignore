@@ -3,7 +3,7 @@ node_modules
 build
 dist
 
-
+certificates/
 
 node_modules/
 .env
