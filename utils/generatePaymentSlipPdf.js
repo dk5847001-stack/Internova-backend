@@ -1,6 +1,7 @@
 const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
+const QRCode = require("qrcode");
 
 const formatDate = (date) =>
   new Date(date).toLocaleDateString("en-IN", {
@@ -46,7 +47,7 @@ const drawSummaryRow = (doc, label, value, x1, x2, y, isTotal = false) => {
     .font(isTotal ? "Helvetica-Bold" : "Helvetica")
     .fontSize(isTotal ? 10.8 : 10)
     .fillColor(isTotal ? "#047857" : "#475569")
-    .text(label, x1, y, { width: 100 });
+    .text(label, x1, y, { width: 110 });
 
   doc
     .font(isTotal ? "Helvetica-Bold" : "Helvetica")
@@ -55,14 +56,66 @@ const drawSummaryRow = (doc, label, value, x1, x2, y, isTotal = false) => {
     .text(value, x2, y, { width: 90, align: "right" });
 };
 
-const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
+const drawBarcodeStyle = (doc, value, x, y, width, height) => {
+  const normalized = String(value || "0000000000").replace(/[^a-zA-Z0-9]/g, "");
+  let cursorX = x;
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const code = normalized.charCodeAt(i);
+    const barWidth = code % 2 === 0 ? 1.2 : 2.4;
+    const gap = code % 3 === 0 ? 1.4 : 2.2;
+
+    if (cursorX + barWidth > x + width) break;
+
+    doc.rect(cursorX, y, barWidth, height).fill("#0F172A");
+    cursorX += barWidth + gap;
+  }
+};
+
+const drawVerifiedStamp = (doc, centerX, centerY) => {
+  doc.save();
+
+  doc
+    .lineWidth(2)
+    .strokeColor("#1D4ED8")
+    .circle(centerX, centerY, 34)
+    .stroke();
+
+  doc
+    .lineWidth(1)
+    .strokeColor("#93C5FD")
+    .circle(centerX, centerY, 28)
+    .stroke();
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(9)
+    .fillColor("#1D4ED8")
+    .text("VERIFIED", centerX - 24, centerY - 7, {
+      width: 48,
+      align: "center",
+    });
+
+  doc
+    .font("Helvetica")
+    .fontSize(6.8)
+    .fillColor("#1D4ED8")
+    .text("OFFICIAL COPY", centerX - 28, centerY + 7, {
+      width: 56,
+      align: "center",
+    });
+
+  doc.restore();
+};
+
+const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
   const doc = new PDFDocument({
     size: "A4",
     margins: {
-      top: 26,
-      bottom: 26,
-      left: 30,
-      right: 30,
+      top: 24,
+      bottom: 24,
+      left: 28,
+      right: 28,
     },
   });
 
@@ -128,21 +181,50 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   const safeName = safeFileName(userName || "candidate");
   const fileName = `${safeName}_payment_receipt_${receiptNumber}.pdf`;
 
+  const qrValue = [
+    `Receipt: ${receiptNumber}`,
+    `Name: ${userName}`,
+    `Program: ${internshipTitle}`,
+    `Amount: ${amountPaid}`,
+    `Payment ID: ${paymentId}`,
+    `Order ID: ${orderId}`,
+    `Issued: ${issueDateTime}`,
+  ].join(" | ");
+
+  const qrDataUrl = await QRCode.toDataURL(qrValue, {
+    errorCorrectionLevel: "M",
+    margin: 1,
+    width: 220,
+  });
+
+  const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
+  const qrBuffer = Buffer.from(qrBase64, "base64");
+
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
   doc.pipe(res);
 
-  // Page background
   doc.rect(0, 0, pageWidth, pageHeight).fill(colors.pageBg);
 
-  // Sheet
   doc
-    .roundedRect(16, 16, pageWidth - 32, pageHeight - 32, 18)
+    .roundedRect(14, 14, pageWidth - 28, pageHeight - 28, 18)
     .fillAndStroke(colors.white, "#E7EDF5");
 
-  // Header band
-  const headerY = 30;
+  doc.save();
+  doc.opacity(0.05);
+  doc.rotate(-30, { origin: [pageWidth / 2, pageHeight / 2] });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(72)
+    .fillColor("#059669")
+    .text("PAID", 145, 360, {
+      width: 320,
+      align: "center",
+    });
+  doc.restore();
+
+  const headerY = 28;
   const headerH = 76;
 
   doc
@@ -163,29 +245,49 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .font("Helvetica-Bold")
     .fontSize(21)
     .fillColor(colors.white)
-    .text("PAYMENT RECEIPT", left + 108, headerY + 16);
+    .text("PAYMENT RECEIPT", left + 108, headerY + 14);
 
   doc
     .font("Helvetica")
     .fontSize(10)
     .fillColor("#CBD5E1")
-    .text("Official payment acknowledgement", left + 108, headerY + 44);
+    .text("Official payment acknowledgement", left + 108, headerY + 42);
 
   doc
-    .roundedRect(right - 108, headerY + 18, 92, 28, 14)
+    .roundedRect(right - 108, headerY + 16, 92, 28, 14)
     .fillAndStroke(colors.successBg, colors.successBorder);
 
   doc
     .font("Helvetica-Bold")
     .fontSize(10)
     .fillColor(colors.success)
-    .text("PAID", right - 108, headerY + 27, {
+    .text("PAID", right - 108, headerY + 25, {
       width: 92,
       align: "center",
     });
 
-  // Receipt meta
-  const metaY = headerY + headerH + 14;
+  const copyY = headerY + headerH + 10;
+
+  doc
+    .roundedRect(left, copyY, contentWidth, 26, 10)
+    .fillAndStroke(colors.slateBg, colors.border);
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(9)
+    .fillColor(colors.primary)
+    .text("CUSTOMER COPY", left + 14, copyY + 9);
+
+  doc
+    .font("Helvetica")
+    .fontSize(8.5)
+    .fillColor(colors.soft)
+    .text("Keep this receipt for future reference", right - 190, copyY + 9, {
+      width: 176,
+      align: "right",
+    });
+
+  const metaY = copyY + 36;
   const metaH = 58;
 
   doc
@@ -203,13 +305,11 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     200
   );
 
-  // Two boxes
-  const infoY = metaY + metaH + 16;
-  const gap = 14;
+  const infoY = metaY + metaH + 14;
+  const gap = 12;
   const halfW = (contentWidth - gap) / 2;
   const infoH = 132;
 
-  // Customer
   doc
     .roundedRect(left, infoY, halfW, infoH, 15)
     .fillAndStroke(colors.white, colors.border);
@@ -228,7 +328,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   drawInfoLabelValue(doc, "Email", userEmail, left + 14, infoY + 74, halfW - 28);
   drawInfoLabelValue(doc, "Phone", userPhone, left + 14, infoY + 106, halfW - 28);
 
-  // Transaction
   const txX = left + halfW + gap;
 
   doc
@@ -256,8 +355,7 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     halfW - 28
   );
 
-  // Items title row
-  const tableY = infoY + infoH + 18;
+  const tableY = infoY + infoH + 16;
 
   doc
     .roundedRect(left, tableY, contentWidth, 34, 10)
@@ -275,7 +373,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       align: "right",
     });
 
-  // Item row
   const itemY = tableY + 34;
   const itemH = 66;
 
@@ -324,12 +421,10 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       align: "right",
     });
 
-  // Bottom two-column layout
-  const bottomY = itemY + itemH + 18;
+  const bottomY = itemY + itemH + 16;
   const summaryW = 220;
   const programW = contentWidth - summaryW - gap;
 
-  // Program info
   doc
     .roundedRect(left, bottomY, programW, 122, 15)
     .fillAndStroke(colors.white, colors.border);
@@ -367,7 +462,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     programW - 204
   );
 
-  // Summary
   const summaryX = left + programW + gap;
 
   doc
@@ -407,18 +501,41 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     true
   );
 
-  // Important note
+  drawVerifiedStamp(doc, right - 56, bottomY + 160);
+
   const noteY = bottomY + 138;
+  const qrBoxW = 112;
+  const noteBoxW = contentWidth - qrBoxW - gap;
 
   doc
-    .roundedRect(left, noteY, contentWidth, 72, 15)
+    .roundedRect(left, noteY, qrBoxW, 96, 15)
+    .fillAndStroke(colors.white, colors.border);
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(9.5)
+    .fillColor(colors.text)
+    .text("Scan Details", left + 14, noteY + 10);
+
+  try {
+    doc.image(qrBuffer, left + 18, noteY + 28, {
+      fit: [74, 74],
+    });
+  } catch (error) {
+    console.error("QR IMAGE ERROR:", error.message);
+  }
+
+  const noteX = left + qrBoxW + gap;
+
+  doc
+    .roundedRect(noteX, noteY, noteBoxW, 96, 15)
     .fillAndStroke(colors.amberBg, colors.amberBorder);
 
   doc
     .font("Helvetica-Bold")
     .fontSize(10.2)
     .fillColor(colors.amberText)
-    .text("Important Note", left + 14, noteY + 12);
+    .text("Important Note", noteX + 14, noteY + 12);
 
   doc
     .font("Helvetica")
@@ -426,33 +543,76 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .fillColor(colors.amberText)
     .text(
       "This is a system-generated payment receipt issued after successful payment verification. Please keep this receipt for support, enrollment verification, and future reference.",
-      left + 14,
+      noteX + 14,
       noteY + 29,
       {
-        width: contentWidth - 28,
+        width: noteBoxW - 28,
         align: "justify",
         lineGap: 2,
       }
     );
 
-  // Footer
-  const footerY = pageHeight - 44;
+  const barcodeY = noteY + 108;
+
+  doc
+    .roundedRect(left, barcodeY, contentWidth, 46, 12)
+    .fillAndStroke("#F8FAFC", colors.border);
+
+  drawBarcodeStyle(
+    doc,
+    `${receiptNumber}${paymentId}${orderId}`,
+    left + 18,
+    barcodeY + 10,
+    contentWidth - 36,
+    18
+  );
+
+  doc
+    .font("Helvetica")
+    .fontSize(8.3)
+    .fillColor(colors.soft)
+    .text(`${receiptNumber} • ${paymentId}`, left, barcodeY + 31, {
+      width: contentWidth,
+      align: "center",
+    });
+
+  const footerY = pageHeight - 54;
 
   doc
     .strokeColor(colors.border)
     .lineWidth(1)
-    .moveTo(left, footerY - 10)
-    .lineTo(right, footerY - 10)
+    .moveTo(left, footerY - 8)
+    .lineTo(right, footerY - 8)
     .stroke();
 
   doc
+    .font("Helvetica-Bold")
+    .fontSize(9)
+    .fillColor(colors.text)
+    .text("Internova", left, footerY);
+
+  doc
     .font("Helvetica")
-    .fontSize(8.4)
+    .fontSize(8.2)
     .fillColor(colors.soft)
     .text(
-      "Internova • Finance Desk • Computer-generated receipt • No physical signature required",
+      "Finance Desk • Internship Program Services • Support: internova.support@gmail.com",
+      left + 58,
+      footerY + 1,
+      {
+        width: contentWidth - 58,
+        align: "left",
+      }
+    );
+
+  doc
+    .font("Helvetica")
+    .fontSize(7.9)
+    .fillColor(colors.soft)
+    .text(
+      "Computer-generated receipt • No physical signature required",
       left,
-      footerY,
+      footerY + 14,
       {
         width: contentWidth,
         align: "center",
