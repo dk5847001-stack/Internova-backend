@@ -5,26 +5,6 @@ const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 
-const resolveBrandingAsset = (fileNames = []) => {
-  const brandingDir = path.join(__dirname, "../uploads/branding");
-
-  for (const fileName of fileNames) {
-    const fullPath = path.join(brandingDir, fileName);
-    if (fs.existsSync(fullPath)) {
-      return fullPath;
-    }
-  }
-
-  return null;
-};
-
-const formatDate = (date) =>
-  new Date(date).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-
 exports.getMyPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find({
@@ -36,6 +16,13 @@ exports.getMyPurchases = async (req, res) => {
     })
       .populate("internshipId")
       .sort({ createdAt: -1 });
+
+    const formatDate = (date) =>
+      new Date(date).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
 
     const enhancedPurchases = purchases.map((purchase) => {
       const internship = purchase.internshipId || {};
@@ -122,7 +109,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .replace(/_+/g, "_")
       .replace(/^_|_$/g, "");
 
-    const fileName = `${safeName}_offer_letter_${purchase._id
+    const fileName = `${safeName}_access_letter_${purchase._id
       .toString()
       .slice(-6)
       .toUpperCase()}.pdf`;
@@ -132,41 +119,13 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.pipe(res);
 
-    // Robust asset resolution
-    const logoPath =
-      resolveBrandingAsset([
-        "logo.png",
-        "brand_logo.png",
-        "brand logo.png",
-      ]) || null;
+    const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
+    const signaturePath = path.join(__dirname, "../uploads/branding/signature.png");
+    const sealPath = path.join(__dirname, "../uploads/branding/seal.png");
 
-    const signaturePath =
-      resolveBrandingAsset([
-        "signature.png",
-        "signature.PNG",
-      ]) || null;
-
-    // seal OR stamp, only one needed
-    const sealPath =
-      resolveBrandingAsset([
-        "seal.png",
-        "stamp.png",
-        "seal.PNG",
-        "stamp.PNG",
-      ]) || null;
-
-    const hasLogo = !!logoPath;
-    const hasSignature = !!signaturePath;
-    const hasSeal = !!sealPath;
-
-    console.log("Offer letter branding assets:", {
-      logoPath,
-      signaturePath,
-      sealPath,
-      hasLogo,
-      hasSignature,
-      hasSeal,
-    });
+    const hasLogo = fs.existsSync(logoPath);
+    const hasSignature = fs.existsSync(signaturePath);
+    const hasSeal = fs.existsSync(sealPath);
 
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
@@ -176,26 +135,38 @@ exports.downloadOfferLetter = async (req, res) => {
 
     const colors = {
       navy: "#0B1736",
+      navySoft: "#1E2B4A",
+      blue: "#2563EB",
       text: "#1F2937",
       soft: "#64748B",
       border: "#D9E2EC",
       light: "#F8FAFC",
       lightBlue: "#EFF6FF",
+      warnBg: "#FFF7ED",
+      warnBorder: "#FED7AA",
+      warnText: "#9A3412",
       white: "#FFFFFF",
       green: "#065F46",
+      greenBg: "#D1FAE5",
     };
+
+    const formatDate = (date) =>
+      new Date(date).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
 
     const issueDate = formatDate(new Date());
     const referenceId = `INV-${purchase._id.toString().slice(-6).toUpperCase()}`;
+
     const amountPaid =
       purchase.amount !== undefined && purchase.amount !== null
         ? `INR ${Number(purchase.amount).toFixed(2)}`
         : "INR 0.00";
 
-    // page background
     doc.rect(0, 0, pageWidth, pageHeight).fill(colors.white);
 
-    // outer frame
     doc
       .lineWidth(1.2)
       .strokeColor("#E5E7EB")
@@ -210,7 +181,6 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.roundedRect(24, 24, pageWidth - 48, 8, 4).fill(colors.navy);
 
-    // header
     const headerY = 42;
     const headerH = 82;
 
@@ -220,8 +190,8 @@ exports.downloadOfferLetter = async (req, res) => {
 
     if (hasLogo) {
       try {
-        doc.image(logoPath, left + 18, headerY + 10, {
-          fit: [90, 58],
+        doc.image(logoPath, left + 18, headerY + 11, {
+          fit: [88, 58],
           align: "left",
           valign: "center",
         });
@@ -234,7 +204,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.white)
       .font("Helvetica-Bold")
       .fontSize(21)
-      .text("PROGRAM OFFER LETTER", left, headerY + 18, {
+      .text("PROGRAM ACCESS LETTER", left, headerY + 18, {
         width: contentWidth,
         align: "center",
       });
@@ -248,7 +218,6 @@ exports.downloadOfferLetter = async (req, res) => {
         align: "center",
       });
 
-    // meta strip
     const metaY = headerY + headerH + 10;
     const metaH = 34;
 
@@ -270,22 +239,17 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.soft)
       .text(issueDate, left + 74, metaY + 11, { width: 120 })
       .text(referenceId, left + 287, metaY + 11, { width: 120 })
-      .text("CONFIRMED", left + 448, metaY + 11, { width: 80 });
+      .text("PAID", left + 457, metaY + 11, { width: 70 });
 
-    let y = metaY + metaH + 16;
+    let y = metaY + metaH + 14;
 
-    // recipient
-    doc
-      .font("Helvetica")
-      .fontSize(10.3)
-      .fillColor(colors.soft)
-      .text("To,", left, y);
+    doc.font("Helvetica").fontSize(10.3).fillColor(colors.soft).text("To,", left, y);
 
     y += 14;
 
     doc
       .font("Helvetica-Bold")
-      .fontSize(11.8)
+      .fontSize(11.6)
       .fillColor(colors.text)
       .text(userName, left, y);
 
@@ -306,15 +270,15 @@ exports.downloadOfferLetter = async (req, res) => {
       .lineTo(right, y)
       .stroke();
 
-    y += 14;
+    y += 12;
 
     doc
       .font("Helvetica-Bold")
       .fontSize(11)
       .fillColor(colors.text)
-      .text("Subject: Formal Confirmation of Program Enrollment", left, y);
+      .text("Subject:  Formal Offer Letter of Internship Enrollment", left, y);
 
-    y += 22;
+    y += 20;
 
     doc
       .font("Helvetica")
@@ -322,13 +286,13 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.text)
       .text(`Dear ${userName},`, left, y);
 
-    y += 20;
+    y += 18;
 
-    const bodyText1 = `We are pleased to confirm your successful enrollment in the training program "${internshipTitle}" offered by Internova. Based on your completed registration and payment confirmation, your access has been activated for ${purchase.durationLabel || "the selected duration"}.`;
+    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted access for a duration of ${purchase.durationLabel || "the selected period"}.`;
 
-    const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. During the access period, you are expected to complete the assigned learning modules, maintain the required progress, and follow all applicable academic and assessment guidelines.`;
+    const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the access period.`;
 
-    const bodyText3 = `This letter serves as your official offer and enrollment confirmation for the selected program. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
+    const bodyText3 = `This document serves as your official internship offer letter. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
 
     doc.text(bodyText1, left, y, {
       width: contentWidth,
@@ -336,7 +300,7 @@ exports.downloadOfferLetter = async (req, res) => {
       lineGap: 2,
     });
 
-    y = doc.y + 10;
+    y = doc.y + 8;
 
     doc.text(bodyText2, left, y, {
       width: contentWidth,
@@ -344,7 +308,7 @@ exports.downloadOfferLetter = async (req, res) => {
       lineGap: 2,
     });
 
-    y = doc.y + 10;
+    y = doc.y + 8;
 
     doc.text(bodyText3, left, y, {
       width: contentWidth,
@@ -352,11 +316,10 @@ exports.downloadOfferLetter = async (req, res) => {
       lineGap: 2,
     });
 
-    y = doc.y + 18;
+    y = doc.y + 16;
 
-    // enrollment details only
     const cardY = y;
-    const cardH = 124;
+    const cardH = 128;
 
     doc
       .roundedRect(left, cardY, contentWidth, cardH, 14)
@@ -388,22 +351,83 @@ exports.downloadOfferLetter = async (req, res) => {
       width: 180,
     });
 
-    labelStyle().text("Registered Email", col1X, cardY + 76);
-    labelStyle().text("Amount Paid", col2X, cardY + 76);
-    valueStyle().text(userEmail, col1X, cardY + 89, { width: 210 });
-    valueStyle().text(amountPaid, col2X, cardY + 89, { width: 180 });
+    labelStyle().text("Registered Email", col1X, cardY + 74);
+    labelStyle().text("Amount Paid", col2X, cardY + 74);
+    valueStyle().text(userEmail, col1X, cardY + 87, { width: 210 });
+    valueStyle().text(amountPaid, col2X, cardY + 87, { width: 180 });
 
-    labelStyle().text("Program Name", col1X, cardY + 108);
-    valueStyle().text(internshipTitle, col1X, cardY + 121, { width: 420 });
+    labelStyle().text("Program Name", col1X, cardY + 106);
+    labelStyle().text("Payment Status", col2X, cardY + 106);
+    valueStyle().text(internshipTitle, col1X, cardY + 119, { width: 210 });
+    valueStyle().text(
+      (purchase.paymentStatus || "paid").toUpperCase(),
+      col2X,
+      cardY + 119,
+      { width: 180 }
+    );
 
-    y = cardY + cardH + 22;
+    y = cardY + cardH + 14;
+
+    const boxGap = 12;
+    const boxW = (contentWidth - boxGap) / 2;
+    const boxH = 74;
+
+    doc
+      .roundedRect(left, y, boxW, boxH, 12)
+      .fillAndStroke("#FFFFFF", colors.border);
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor(colors.text)
+      .text("Payment Information", left + 12, y + 10);
+
+    doc
+      .font("Helvetica")
+      .fontSize(8.8)
+      .fillColor(colors.soft)
+      .text(`Payment ID: ${purchase.razorpayPaymentId || "N/A"}`, left + 12, y + 28, {
+        width: boxW - 24,
+      })
+      .text(`Order ID: ${purchase.razorpayOrderId || "N/A"}`, left + 12, y + 45, {
+        width: boxW - 24,
+      });
+
+    const noteX = left + boxW + boxGap;
+
+    doc
+      .roundedRect(noteX, y, boxW, boxH, 12)
+      .fillAndStroke(colors.warnBg, colors.warnBorder);
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor(colors.warnText)
+      .text("Important Note", noteX + 12, y + 10);
+
+    doc
+      .font("Helvetica")
+      .fontSize(8.7)
+      .fillColor(colors.warnText)
+      .text(
+        "Certificate issuance depends on successful completion of progress, assessments, and internal eligibility requirements.",
+        noteX + 12,
+        y + 28,
+        {
+          width: boxW - 24,
+          align: "justify",
+          lineGap: 1,
+        }
+      );
+
+    y += boxH + 16;
 
     doc
       .font("Helvetica")
       .fontSize(10)
       .fillColor(colors.text)
       .text(
-        "We are delighted to welcome you to Internova and wish you a meaningful and valuable learning journey ahead.",
+        "We are delighted to welcome you to Internova and wish you a valuable learning journey ahead.",
         left,
         y,
         {
@@ -413,9 +437,8 @@ exports.downloadOfferLetter = async (req, res) => {
         }
       );
 
-    // sign area
-    const footerY = pageHeight - 44;
-    const signBaseY = footerY - 96;
+    const footerY = pageHeight - 42;
+    const signBaseY = footerY - 92;
 
     doc
       .font("Helvetica")
@@ -423,60 +446,47 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.text)
       .text("Sincerely,", left, signBaseY - 18);
 
-    // signature
     if (hasSignature) {
       try {
-        doc.image(signaturePath, left, signBaseY - 2, {
-          fit: [150, 46],
-          align: "left",
-          valign: "center",
+        doc.image(signaturePath, left, signBaseY - 4, {
+          fit: [125, 34],
         });
       } catch (e) {
         console.error("Signature load error:", e.message);
       }
-    } else {
-      console.error("Signature file not found");
     }
 
     doc
       .strokeColor("#94A3B8")
       .lineWidth(1)
-      .moveTo(left, signBaseY + 34)
-      .lineTo(left + 180, signBaseY + 34)
+      .moveTo(left, signBaseY + 26)
+      .lineTo(left + 170, signBaseY + 26)
       .stroke();
 
     doc
       .font("Helvetica-Bold")
       .fontSize(10.8)
       .fillColor(colors.navy)
-      .text("Authorized Signatory", left, signBaseY + 40);
+      .text("Authorized Signatory", left, signBaseY + 32);
 
     doc
       .font("Helvetica")
       .fontSize(9.4)
       .fillColor(colors.soft)
-      .text("Internova", left, signBaseY + 55)
-      .text("Program Management", left, signBaseY + 68);
+      .text("Internova", left, signBaseY + 47)
+      .text("Program Management", left, signBaseY + 60);
 
-    // seal (single asset only)
     if (hasSeal) {
       try {
-        doc.save();
-        doc.opacity(0.98);
-        doc.image(sealPath, right - 150, signBaseY - 26, {
-          fit: [132, 132],
+        doc.image(sealPath, right - 130, signBaseY - 24, {
+          fit: [120, 120],
           align: "right",
-          valign: "center",
         });
-        doc.restore();
       } catch (e) {
         console.error("Seal load error:", e.message);
       }
-    } else {
-      console.error("Seal/Stamp file not found");
     }
 
-    // footer line
     doc
       .strokeColor(colors.border)
       .lineWidth(1)

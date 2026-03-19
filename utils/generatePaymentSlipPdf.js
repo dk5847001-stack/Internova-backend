@@ -72,42 +72,6 @@ const drawBarcodeStyle = (doc, value, x, y, width, height) => {
   }
 };
 
-const drawVerifiedStamp = (doc, centerX, centerY) => {
-  doc.save();
-
-  doc
-    .lineWidth(2)
-    .strokeColor("#1D4ED8")
-    .circle(centerX, centerY, 34)
-    .stroke();
-
-  doc
-    .lineWidth(1)
-    .strokeColor("#93C5FD")
-    .circle(centerX, centerY, 28)
-    .stroke();
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(9)
-    .fillColor("#1D4ED8")
-    .text("VERIFIED", centerX - 24, centerY - 7, {
-      width: 48,
-      align: "center",
-    });
-
-  doc
-    .font("Helvetica")
-    .fontSize(6.8)
-    .fillColor("#1D4ED8")
-    .text("OFFICIAL COPY", centerX - 28, centerY + 7, {
-      width: 56,
-      align: "center",
-    });
-
-  doc.restore();
-};
-
 const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
   const doc = new PDFDocument({
     size: "A4",
@@ -142,14 +106,19 @@ const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
     amberBorder: "#FED7AA",
     amberText: "#9A3412",
     slateBg: "#F8FAFC",
+    qrBg: "#F8FAFC",
   };
 
   const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
   const altLogoPath = path.join(__dirname, "../uploads/branding/brand_logo.png");
+  const altLogoPath2 = path.join(__dirname, "../uploads/branding/brand logo.png");
+
   const finalLogoPath = fs.existsSync(logoPath)
     ? logoPath
     : fs.existsSync(altLogoPath)
     ? altLogoPath
+    : fs.existsSync(altLogoPath2)
+    ? altLogoPath2
     : null;
 
   const userName = user?.name || "Candidate";
@@ -195,6 +164,10 @@ const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
     errorCorrectionLevel: "M",
     margin: 1,
     width: 220,
+    color: {
+      dark: "#0F172A",
+      light: "#FFFFFF",
+    },
   });
 
   const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
@@ -501,25 +474,45 @@ const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
     true
   );
 
-  drawVerifiedStamp(doc, right - 56, bottomY + 160);
-
   const noteY = bottomY + 138;
   const qrBoxW = 112;
   const noteBoxW = contentWidth - qrBoxW - gap;
 
+  // Professional QR box
   doc
     .roundedRect(left, noteY, qrBoxW, 96, 15)
     .fillAndStroke(colors.white, colors.border);
 
   doc
+    .roundedRect(left + 10, noteY + 10, qrBoxW - 20, 18, 8)
+    .fillAndStroke(colors.qrBg, "#E8EEF7");
+
+  doc
     .font("Helvetica-Bold")
-    .fontSize(9.5)
+    .fontSize(9.3)
     .fillColor(colors.text)
-    .text("Scan Details", left + 14, noteY + 10);
+    .text("Scan Details", left + 10, noteY + 15, {
+      width: qrBoxW - 20,
+      align: "center",
+    });
+
+  const qrWrapX = left + 18;
+  const qrWrapY = noteY + 32;
+  const qrWrapSize = 76;
+
+  doc
+    .roundedRect(qrWrapX, qrWrapY, qrWrapSize, qrWrapSize, 10)
+    .fillAndStroke("#FFFFFF", "#E5EAF1");
 
   try {
-    doc.image(qrBuffer, left + 18, noteY + 28, {
-      fit: [74, 74],
+    const qrSize = 64;
+    const qrX = qrWrapX + (qrWrapSize - qrSize) / 2;
+    const qrY = qrWrapY + (qrWrapSize - qrSize) / 2;
+
+    doc.image(qrBuffer, qrX, qrY, {
+      fit: [qrSize, qrSize],
+      align: "center",
+      valign: "center",
     });
   } catch (error) {
     console.error("QR IMAGE ERROR:", error.message);
