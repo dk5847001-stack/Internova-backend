@@ -20,26 +20,30 @@ const formatDateTime = (date) =>
 
 const formatAmount = (amount) => `INR ${Number(amount || 0).toFixed(2)}`;
 
-const getReferenceId = (purchase) =>
-  `PAY-${purchase._id.toString().slice(-6).toUpperCase()}`;
-
 const safeFileName = (value = "") =>
   String(value)
     .replace(/[^a-z0-9]/gi, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "");
 
-const drawLabelValue = (doc, label, value, x, y, width) => {
+const getReceiptNumber = (purchase) =>
+  `RCPT-${purchase._id.toString().slice(-8).toUpperCase()}`;
+
+const drawText = (doc, text, x, y, options = {}) => {
+  doc.text(text || "", x, y, options);
+};
+
+const drawInfoBlock = (doc, label, value, x, y, width) => {
   doc
     .font("Helvetica-Bold")
-    .fontSize(9)
-    .fillColor("#0F172A")
+    .fontSize(8.8)
+    .fillColor("#64748B")
     .text(label, x, y, { width });
 
   doc
     .font("Helvetica")
-    .fontSize(9.2)
-    .fillColor("#475569")
+    .fontSize(10)
+    .fillColor("#0F172A")
     .text(value || "N/A", x, y + 13, { width });
 };
 
@@ -61,33 +65,26 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   const contentWidth = right - left;
 
   const colors = {
-    dark: "#081225",
-    dark2: "#0F1B35",
+    bg: "#F8FAFC",
+    white: "#FFFFFF",
     text: "#0F172A",
     soft: "#64748B",
-    border: "#DCE6F2",
-    white: "#FFFFFF",
-    light: "#F8FAFC",
-    lightBlue: "#EEF4FF",
-    blue: "#1D4ED8",
-    green: "#065F46",
+    border: "#E2E8F0",
+    dark: "#0B1220",
+    primary: "#1D4ED8",
+    green: "#047857",
     greenBg: "#D1FAE5",
-    greenBorder: "#6EE7B7",
-    gold: "#B45309",
-    goldBg: "#FFF7ED",
-    goldBorder: "#FED7AA",
-    red: "#991B1B",
-    redBg: "#FEF2F2",
-    redBorder: "#FECACA",
+    greenBorder: "#86EFAC",
+    blueBg: "#EFF6FF",
+    blueBorder: "#BFDBFE",
+    amberBg: "#FFF7ED",
+    amberBorder: "#FED7AA",
+    amberText: "#9A3412",
+    red: "#B91C1C",
   };
 
-  const brandLogo = path.join(__dirname, "../uploads/branding/logo.png");
-  const brandSeal = path.join(__dirname, "../uploads/branding/seal.png");
-  const brandSignature = path.join(__dirname, "../uploads/branding/signature.png");
-
-  const hasLogo = fs.existsSync(brandLogo);
-  const hasSeal = fs.existsSync(brandSeal);
-  const hasSignature = fs.existsSync(brandSignature);
+  const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
+  const hasLogo = fs.existsSync(logoPath);
 
   const userName = user?.name || "Candidate";
   const userEmail = user?.email || "N/A";
@@ -97,21 +94,25 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   const internshipCategory = internship?.category || "General";
   const internshipBranch = internship?.branch || "N/A";
 
-  const purchaseTypeLabel =
-    purchase?.purchaseType === "unlock_all"
-      ? "Unlock All Add-on"
-      : "Internship Enrollment";
-
-  const paymentStatus = String(purchase?.paymentStatus || "paid").toUpperCase();
+  const receiptNumber = getReceiptNumber(purchase);
   const issueDate = formatDate(purchase?.updatedAt || purchase?.createdAt || new Date());
   const issueDateTime = formatDateTime(
     purchase?.updatedAt || purchase?.createdAt || new Date()
   );
-  const referenceId = getReferenceId(purchase);
-  const amountPaid = formatAmount(purchase?.amount);
+
+  const paymentId = purchase?.razorpayPaymentId || "N/A";
+  const orderId = purchase?.razorpayOrderId || "N/A";
+  const amountPaid = Number(purchase?.amount || 0).toFixed(2);
+
+  const purchaseTypeLabel =
+    purchase?.purchaseType === "unlock_all"
+      ? "Unlock All Add-on Access"
+      : "Internship Enrollment";
+
+  const durationLabel = purchase?.durationLabel || "N/A";
 
   const safeName = safeFileName(userName || "candidate");
-  const fileName = `${safeName}_payment_slip_${referenceId}.pdf`;
+  const fileName = `${safeName}_payment_receipt_${receiptNumber}.pdf`;
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
@@ -119,38 +120,16 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   doc.pipe(res);
 
   // Background
-  doc.rect(0, 0, pageWidth, pageHeight).fill(colors.white);
+  doc.rect(0, 0, pageWidth, pageHeight).fill(colors.bg);
 
-  // Outer premium frame
+  // Main sheet
   doc
-    .lineWidth(1.1)
-    .strokeColor("#D7E3F1")
-    .roundedRect(14, 14, pageWidth - 28, pageHeight - 28, 18)
-    .stroke();
-
-  doc
-    .lineWidth(0.7)
-    .strokeColor("#EEF4FB")
-    .roundedRect(22, 22, pageWidth - 44, pageHeight - 44, 16)
-    .stroke();
-
-  // Top strip
-  doc.roundedRect(22, 22, pageWidth - 44, 9, 4).fill(colors.dark);
-
-  // Watermark
-  doc.save();
-  doc.opacity(0.05);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(58)
-    .fillColor(colors.blue)
-    .rotate(-28, { origin: [pageWidth / 2, pageHeight / 2] })
-    .text("PAID", 145, 360, { align: "center", width: 320 });
-  doc.restore();
+    .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 20)
+    .fillAndStroke(colors.white, "#E5EAF1");
 
   // Header
-  const headerY = 42;
-  const headerH = 88;
+  const headerY = 34;
+  const headerH = 84;
 
   doc
     .roundedRect(left, headerY, contentWidth, headerH, 18)
@@ -158,248 +137,256 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
 
   if (hasLogo) {
     try {
-      doc.image(brandLogo, left + 18, headerY + 14, {
-        fit: [92, 58],
-        align: "left",
-        valign: "center",
+      doc.image(logoPath, left + 16, headerY + 14, {
+        fit: [90, 52],
       });
     } catch (error) {
-      console.error("PAYMENT SLIP LOGO ERROR:", error.message);
+      console.error("PAYMENT RECEIPT LOGO ERROR:", error.message);
     }
   }
 
   doc
     .font("Helvetica-Bold")
-    .fontSize(22)
+    .fontSize(23)
     .fillColor(colors.white)
-    .text("PAYMENT SLIP", left, headerY + 18, {
-      width: contentWidth,
-      align: "center",
-    });
+    .text("PAYMENT RECEIPT", left + 120, headerY + 18);
 
   doc
     .font("Helvetica")
-    .fontSize(11)
+    .fontSize(10.5)
     .fillColor("#CBD5E1")
-    .text("Internova • Secure Payment Acknowledgement", left, headerY + 50, {
-      width: contentWidth,
-      align: "center",
-    });
+    .text("Secure transaction acknowledgement", left + 120, headerY + 48);
 
-  // status badge
-  const badgeW = 88;
-  const badgeX = right - badgeW - 16;
-  const badgeY = headerY + 16;
-
+  // Paid badge
   doc
-    .roundedRect(badgeX, badgeY, badgeW, 28, 14)
+    .roundedRect(right - 104, headerY + 18, 88, 30, 15)
     .fillAndStroke(colors.greenBg, colors.greenBorder);
 
   doc
     .font("Helvetica-Bold")
     .fontSize(10)
     .fillColor(colors.green)
-    .text(paymentStatus, badgeX, badgeY + 9, {
-      width: badgeW,
+    .text("PAID", right - 104, headerY + 28, {
+      width: 88,
       align: "center",
     });
 
-  // Meta bar
-  const metaY = headerY + headerH + 10;
-  const metaH = 42;
+  // Meta row
+  const metaY = headerY + headerH + 14;
+  const metaH = 62;
 
   doc
-    .roundedRect(left, metaY, contentWidth, metaH, 12)
-    .fillAndStroke(colors.light, "#E2E8F0");
+    .roundedRect(left, metaY, contentWidth, metaH, 14)
+    .fillAndStroke("#FCFDFE", colors.border);
 
-  drawLabelValue(doc, "Issue Date", issueDate, left + 16, metaY + 8, 120);
-  drawLabelValue(doc, "Reference ID", referenceId, left + 175, metaY + 8, 130);
-  drawLabelValue(
-    doc,
-    "Payment Time",
-    issueDateTime,
-    left + 335,
-    metaY + 8,
-    180
-  );
+  drawInfoBlock(doc, "Receipt Number", receiptNumber, left + 16, metaY + 12, 150);
+  drawInfoBlock(doc, "Issue Date", issueDate, left + 190, metaY + 12, 120);
+  drawInfoBlock(doc, "Transaction Time", issueDateTime, left + 330, metaY + 12, 190);
 
-  let y = metaY + metaH + 16;
-
-  // Intro block
-  doc
-    .roundedRect(left, y, contentWidth, 76, 14)
-    .fillAndStroke("#FCFDFE", "#E2E8F0");
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(11)
-    .fillColor(colors.text)
-    .text("Payment Confirmed", left + 14, y + 12);
-
-  doc
-    .font("Helvetica")
-    .fontSize(9.8)
-    .fillColor(colors.soft)
-    .text(
-      `This document confirms that payment has been successfully received by Internova for the selected ${purchaseTypeLabel.toLowerCase()}. Please retain this slip for your records and future support requests.`,
-      left + 14,
-      y + 30,
-      {
-        width: contentWidth - 28,
-        align: "justify",
-        lineGap: 2,
-      }
-    );
-
-  y += 92;
-
-  // Two main cards
+  // Bill to + payment details
+  const sectionY = metaY + metaH + 16;
   const gap = 14;
-  const colW = (contentWidth - gap) / 2;
-  const cardH = 160;
+  const boxW = (contentWidth - gap) / 2;
+  const boxH = 132;
 
-  // Learner card
   doc
-    .roundedRect(left, y, colW, cardH, 14)
+    .roundedRect(left, sectionY, boxW, boxH, 16)
     .fillAndStroke(colors.white, colors.border);
 
   doc
-    .roundedRect(left, y, colW, 32, 14)
-    .fillAndStroke(colors.lightBlue, colors.lightBlue);
+    .roundedRect(left, sectionY, boxW, 30, 16)
+    .fillAndStroke(colors.blueBg, colors.blueBg);
 
   doc
     .font("Helvetica-Bold")
     .fontSize(11)
-    .fillColor(colors.dark2)
-    .text("Learner Details", left + 14, y + 11);
+    .fillColor(colors.primary)
+    .text("Bill To", left + 14, sectionY + 10);
 
-  drawLabelValue(doc, "Full Name", userName, left + 14, y + 44, colW - 28);
-  drawLabelValue(doc, "Email Address", userEmail, left + 14, y + 78, colW - 28);
-  drawLabelValue(doc, "Phone Number", userPhone, left + 14, y + 112, colW - 28);
+  drawInfoBlock(doc, "Name", userName, left + 14, sectionY + 42, boxW - 28);
+  drawInfoBlock(doc, "Email", userEmail, left + 14, sectionY + 73, boxW - 28);
+  drawInfoBlock(doc, "Phone", userPhone, left + 14, sectionY + 104, boxW - 28);
 
-  // Program card
-  const card2X = left + colW + gap;
+  const paymentBoxX = left + boxW + gap;
 
   doc
-    .roundedRect(card2X, y, colW, cardH, 14)
+    .roundedRect(paymentBoxX, sectionY, boxW, boxH, 16)
     .fillAndStroke(colors.white, colors.border);
 
   doc
-    .roundedRect(card2X, y, colW, 32, 14)
+    .roundedRect(paymentBoxX, sectionY, boxW, 30, 16)
     .fillAndStroke("#EEFDF5", "#EEFDF5");
 
   doc
     .font("Helvetica-Bold")
     .fontSize(11)
     .fillColor(colors.green)
-    .text("Program Details", card2X + 14, y + 11);
+    .text("Payment Details", paymentBoxX + 14, sectionY + 10);
 
-  drawLabelValue(doc, "Program Name", internshipTitle, card2X + 14, y + 44, colW - 28);
-  drawLabelValue(
+  drawInfoBlock(
     doc,
-    "Plan / Access Type",
-    purchaseTypeLabel,
-    card2X + 14,
-    y + 78,
-    colW - 28
+    "Payment ID",
+    paymentId,
+    paymentBoxX + 14,
+    sectionY + 42,
+    boxW - 28
   );
-  drawLabelValue(
+  drawInfoBlock(
     doc,
-    "Selected Duration",
-    purchase?.durationLabel || "N/A",
-    card2X + 14,
-    y + 112,
-    colW - 28
+    "Order ID",
+    orderId,
+    paymentBoxX + 14,
+    sectionY + 73,
+    boxW - 28
+  );
+  drawInfoBlock(
+    doc,
+    "Payment Method",
+    "Razorpay Online Payment",
+    paymentBoxX + 14,
+    sectionY + 104,
+    boxW - 28
   );
 
-  y += cardH + 16;
-
-  // Payment summary card
-  const summaryH = 138;
+  // Itemized section
+  const tableY = sectionY + boxH + 18;
 
   doc
-    .roundedRect(left, y, contentWidth, summaryH, 14)
-    .fillAndStroke(colors.light, "#E2E8F0");
-
-  doc
-    .roundedRect(left, y, contentWidth, 34, 14)
-    .fillAndStroke("#FFF8EB", "#FFF8EB");
+    .roundedRect(left, tableY, contentWidth, 36, 12)
+    .fillAndStroke("#F8FAFC", colors.border);
 
   doc
     .font("Helvetica-Bold")
-    .fontSize(11)
-    .fillColor(colors.gold)
-    .text("Payment Summary", left + 14, y + 12);
+    .fontSize(9.5)
+    .fillColor(colors.soft)
+    .text("DESCRIPTION", left + 16, tableY + 13)
+    .text("CATEGORY", left + 275, tableY + 13)
+    .text("DURATION", left + 390, tableY + 13)
+    .text("AMOUNT", right - 85, tableY + 13, { width: 70, align: "right" });
 
-  const summaryY = y + 48;
-  const w1 = 150;
-  const w2 = 170;
-  const w3 = 170;
+  const rowY = tableY + 36;
+  const rowH = 62;
 
-  drawLabelValue(doc, "Amount Paid", amountPaid, left + 16, summaryY, w1);
-  drawLabelValue(
-    doc,
-    "Payment ID",
-    purchase?.razorpayPaymentId || "N/A",
-    left + 185,
-    summaryY,
-    w2
-  );
-  drawLabelValue(
-    doc,
-    "Order ID",
-    purchase?.razorpayOrderId || "N/A",
-    left + 370,
-    summaryY,
-    w3
-  );
-
-  drawLabelValue(
-    doc,
-    "Category",
-    internshipCategory,
-    left + 16,
-    summaryY + 42,
-    w1
-  );
-  drawLabelValue(
-    doc,
-    "Branch",
-    internshipBranch,
-    left + 185,
-    summaryY + 42,
-    w2
-  );
-  drawLabelValue(
-    doc,
-    "Payment Status",
-    paymentStatus,
-    left + 370,
-    summaryY + 42,
-    w3
-  );
-
-  y += summaryH + 14;
-
-  // Security note
   doc
-    .roundedRect(left, y, contentWidth, 74, 14)
-    .fillAndStroke(colors.goldBg, colors.goldBorder);
+    .roundedRect(left, rowY, contentWidth, rowH, 12)
+    .fillAndStroke(colors.white, colors.border);
 
   doc
     .font("Helvetica-Bold")
     .fontSize(10.4)
-    .fillColor(colors.gold)
-    .text("Verification Note", left + 14, y + 12);
+    .fillColor(colors.text)
+    .text(internshipTitle, left + 16, rowY + 14, {
+      width: 235,
+    });
+
+  doc
+    .font("Helvetica")
+    .fontSize(8.8)
+    .fillColor(colors.soft)
+    .text(purchaseTypeLabel, left + 16, rowY + 33, {
+      width: 235,
+    });
+
+  doc
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor(colors.text)
+    .text(internshipCategory, left + 275, rowY + 22, { width: 95 })
+    .text(durationLabel, left + 390, rowY + 22, { width: 90 });
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor(colors.text)
+    .text(`INR ${amountPaid}`, right - 100, rowY + 21, {
+      width: 85,
+      align: "right",
+    });
+
+  // Summary box
+  const summaryY = rowY + rowH + 20;
+  const summaryW = 210;
+  const summaryX = right - summaryW;
+
+  doc
+    .roundedRect(summaryX, summaryY, summaryW, 108, 16)
+    .fillAndStroke("#FCFDFE", colors.border);
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor(colors.text)
+    .text("Payment Summary", summaryX + 14, summaryY + 12);
+
+  doc
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor(colors.soft)
+    .text("Subtotal", summaryX + 14, summaryY + 40)
+    .text("Platform Charges", summaryX + 14, summaryY + 61)
+    .text("Total Paid", summaryX + 14, summaryY + 84);
+
+  doc
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor(colors.text)
+    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 40, {
+      width: 76,
+      align: "right",
+    })
+    .text("INR 0.00", summaryX + 120, summaryY + 61, {
+      width: 76,
+      align: "right",
+    });
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor(colors.green)
+    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 84, {
+      width: 76,
+      align: "right",
+    });
+
+  // Program block
+  const leftInfoY = summaryY;
+  const leftInfoW = contentWidth - summaryW - 16;
+
+  doc
+    .roundedRect(left, leftInfoY, leftInfoW, 108, 16)
+    .fillAndStroke(colors.white, colors.border);
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor(colors.text)
+    .text("Program Information", left + 14, leftInfoY + 12);
+
+  drawInfoBlock(doc, "Program Name", internshipTitle, left + 14, leftInfoY + 40, 210);
+  drawInfoBlock(doc, "Branch", internshipBranch, left + 235, leftInfoY + 40, 110);
+  drawInfoBlock(doc, "Category", internshipCategory, left + 355, leftInfoY + 40, 120);
+
+  // Footer note
+  const noteY = summaryY + 126;
+
+  doc
+    .roundedRect(left, noteY, contentWidth, 76, 16)
+    .fillAndStroke(colors.amberBg, colors.amberBorder);
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10.4)
+    .fillColor(colors.amberText)
+    .text("Important", left + 14, noteY + 12);
 
   doc
     .font("Helvetica")
     .fontSize(9.2)
-    .fillColor("#92400E")
+    .fillColor(colors.amberText)
     .text(
-      "This is a system-generated premium payment acknowledgment issued by Internova. The transaction details shown above are based on the verified payment record stored in the platform.",
+      "This is a system-generated payment receipt issued after successful payment verification. Please keep this receipt for support, enrollment verification, and future reference.",
       left + 14,
-      y + 30,
+      noteY + 30,
       {
         width: contentWidth - 28,
         align: "justify",
@@ -407,54 +394,14 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       }
     );
 
-  // Footer area
-  const footerY = pageHeight - 92;
-
-  if (hasSignature) {
-    try {
-      doc.image(brandSignature, left, footerY - 8, {
-        fit: [120, 34],
-      });
-    } catch (error) {
-      console.error("PAYMENT SLIP SIGNATURE ERROR:", error.message);
-    }
-  }
-
-  doc
-    .strokeColor("#94A3B8")
-    .lineWidth(1)
-    .moveTo(left, footerY + 24)
-    .lineTo(left + 170, footerY + 24)
-    .stroke();
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(10.4)
-    .fillColor(colors.dark2)
-    .text("Authorized Signatory", left, footerY + 30);
-
-  doc
-    .font("Helvetica")
-    .fontSize(9.2)
-    .fillColor(colors.soft)
-    .text("Internova Finance & Enrollment Desk", left, footerY + 45);
-
-  if (hasSeal) {
-    try {
-      doc.image(brandSeal, right - 124, footerY - 26, {
-        fit: [112, 112],
-        align: "right",
-      });
-    } catch (error) {
-      console.error("PAYMENT SLIP SEAL ERROR:", error.message);
-    }
-  }
+  // Footer
+  const footerY = pageHeight - 52;
 
   doc
     .strokeColor(colors.border)
     .lineWidth(1)
-    .moveTo(left, pageHeight - 44)
-    .lineTo(right, pageHeight - 44)
+    .moveTo(left, footerY - 10)
+    .lineTo(right, footerY - 10)
     .stroke();
 
   doc
@@ -462,9 +409,9 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .fontSize(8.5)
     .fillColor(colors.soft)
     .text(
-      "This document is system generated and intended for record purposes. Altered or manually modified copies may be considered invalid.",
+      "Internova • Finance Desk • This is a computer-generated receipt and does not require a physical signature.",
       left,
-      pageHeight - 36,
+      footerY,
       {
         width: contentWidth,
         align: "center",
