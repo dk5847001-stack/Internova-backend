@@ -204,7 +204,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .fillColor(colors.white)
       .font("Helvetica-Bold")
       .fontSize(21)
-      .text("PROGRAM ACCESS LETTER", left, headerY + 18, {
+      .text("INTERNSHIP OFFER LETTER", left, headerY + 18, {
         width: contentWidth,
         align: "center",
       });
@@ -288,9 +288,9 @@ exports.downloadOfferLetter = async (req, res) => {
 
     y += 18;
 
-    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted access for a duration of ${purchase.durationLabel || "the selected period"}.`;
+    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted offer for a duration of ${purchase.durationLabel || "the selected period"}.`;
 
-    const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the access period.`;
+    const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the offer period.`;
 
     const bodyText3 = `This document serves as your official internship offer letter. Certificate issuance remains subject to successful completion of the required progress, assessments, and eligibility criteria defined by Internova.`;
 
@@ -510,10 +510,10 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.end();
   } catch (error) {
-    console.error("DOWNLOAD ACCESS LETTER ERROR:", error);
+    console.error("DOWNLOAD OFFER LETTER ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to generate access letter",
+      message: "Failed to generate OFFER letter",
     });
   }
 };
