@@ -18,8 +18,6 @@ const formatDateTime = (date) =>
     minute: "2-digit",
   });
 
-const formatAmount = (amount) => `INR ${Number(amount || 0).toFixed(2)}`;
-
 const safeFileName = (value = "") =>
   String(value)
     .replace(/[^a-z0-9]/gi, "_")
@@ -28,10 +26,6 @@ const safeFileName = (value = "") =>
 
 const getReceiptNumber = (purchase) =>
   `RCPT-${purchase._id.toString().slice(-8).toUpperCase()}`;
-
-const drawText = (doc, text, x, y, options = {}) => {
-  doc.text(text || "", x, y, options);
-};
 
 const drawInfoBlock = (doc, label, value, x, y, width) => {
   doc
@@ -76,15 +70,20 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     greenBg: "#D1FAE5",
     greenBorder: "#86EFAC",
     blueBg: "#EFF6FF",
-    blueBorder: "#BFDBFE",
     amberBg: "#FFF7ED",
     amberBorder: "#FED7AA",
     amberText: "#9A3412",
-    red: "#B91C1C",
   };
 
   const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
-  const hasLogo = fs.existsSync(logoPath);
+  const altLogoPath = path.join(__dirname, "../uploads/branding/brand_logo.png");
+  const finalLogoPath = fs.existsSync(logoPath)
+    ? logoPath
+    : fs.existsSync(altLogoPath)
+    ? altLogoPath
+    : null;
+
+  const hasLogo = !!finalLogoPath;
 
   const userName = user?.name || "Candidate";
   const userEmail = user?.email || "N/A";
@@ -119,15 +118,12 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
 
   doc.pipe(res);
 
-  // Background
   doc.rect(0, 0, pageWidth, pageHeight).fill(colors.bg);
 
-  // Main sheet
   doc
     .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 20)
     .fillAndStroke(colors.white, "#E5EAF1");
 
-  // Header
   const headerY = 34;
   const headerH = 84;
 
@@ -137,7 +133,7 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
 
   if (hasLogo) {
     try {
-      doc.image(logoPath, left + 16, headerY + 14, {
+      doc.image(finalLogoPath, left + 16, headerY + 14, {
         fit: [90, 52],
       });
     } catch (error) {
@@ -157,7 +153,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .fillColor("#CBD5E1")
     .text("Secure transaction acknowledgement", left + 120, headerY + 48);
 
-  // Paid badge
   doc
     .roundedRect(right - 104, headerY + 18, 88, 30, 15)
     .fillAndStroke(colors.greenBg, colors.greenBorder);
@@ -171,7 +166,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       align: "center",
     });
 
-  // Meta row
   const metaY = headerY + headerH + 14;
   const metaH = 62;
 
@@ -183,7 +177,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
   drawInfoBlock(doc, "Issue Date", issueDate, left + 190, metaY + 12, 120);
   drawInfoBlock(doc, "Transaction Time", issueDateTime, left + 330, metaY + 12, 190);
 
-  // Bill to + payment details
   const sectionY = metaY + metaH + 16;
   const gap = 14;
   const boxW = (contentWidth - gap) / 2;
@@ -248,7 +241,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     boxW - 28
   );
 
-  // Itemized section
   const tableY = sectionY + boxH + 18;
 
   doc
@@ -303,13 +295,12 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       align: "right",
     });
 
-  // Summary box
   const summaryY = rowY + rowH + 20;
   const summaryW = 210;
   const summaryX = right - summaryW;
 
   doc
-    .roundedRect(summaryX, summaryY, summaryW, 108, 16)
+    .roundedRect(summaryX, summaryY, summaryW, 116, 16)
     .fillAndStroke("#FCFDFE", colors.border);
 
   doc
@@ -322,19 +313,19 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .font("Helvetica")
     .fontSize(10)
     .fillColor(colors.soft)
-    .text("Subtotal", summaryX + 14, summaryY + 40)
-    .text("Platform Charges", summaryX + 14, summaryY + 61)
-    .text("Total Paid", summaryX + 14, summaryY + 84);
+    .text("Subtotal", summaryX + 14, summaryY + 42)
+    .text("Platform Charges", summaryX + 14, summaryY + 66)
+    .text("Total Paid", summaryX + 14, summaryY + 92);
 
   doc
     .font("Helvetica")
     .fontSize(10)
     .fillColor(colors.text)
-    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 40, {
+    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 42, {
       width: 76,
       align: "right",
     })
-    .text("INR 0.00", summaryX + 120, summaryY + 61, {
+    .text("INR 0.00", summaryX + 120, summaryY + 66, {
       width: 76,
       align: "right",
     });
@@ -343,17 +334,18 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .font("Helvetica-Bold")
     .fontSize(11)
     .fillColor(colors.green)
-    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 84, {
+    .text(`INR ${amountPaid}`, summaryX + 120, summaryY + 92, {
       width: 76,
       align: "right",
     });
 
-  // Program block
+  // Fixed program block
   const leftInfoY = summaryY;
   const leftInfoW = contentWidth - summaryW - 16;
+  const leftInfoH = 116;
 
   doc
-    .roundedRect(left, leftInfoY, leftInfoW, 108, 16)
+    .roundedRect(left, leftInfoY, leftInfoW, leftInfoH, 16)
     .fillAndStroke(colors.white, colors.border);
 
   doc
@@ -362,12 +354,34 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
     .fillColor(colors.text)
     .text("Program Information", left + 14, leftInfoY + 12);
 
-  drawInfoBlock(doc, "Program Name", internshipTitle, left + 14, leftInfoY + 40, 210);
-  drawInfoBlock(doc, "Branch", internshipBranch, left + 235, leftInfoY + 40, 110);
-  drawInfoBlock(doc, "Category", internshipCategory, left + 355, leftInfoY + 40, 120);
+  drawInfoBlock(
+    doc,
+    "Program Name",
+    internshipTitle,
+    left + 14,
+    leftInfoY + 42,
+    leftInfoW - 28
+  );
 
-  // Footer note
-  const noteY = summaryY + 126;
+  drawInfoBlock(
+    doc,
+    "Branch",
+    internshipBranch,
+    left + 14,
+    leftInfoY + 82,
+    140
+  );
+
+  drawInfoBlock(
+    doc,
+    "Category",
+    internshipCategory,
+    left + 190,
+    leftInfoY + 82,
+    leftInfoW - 204
+  );
+
+  const noteY = summaryY + 134;
 
   doc
     .roundedRect(left, noteY, contentWidth, 76, 16)
@@ -394,7 +408,6 @@ const generatePaymentSlipPdf = ({ res, purchase, user, internship }) => {
       }
     );
 
-  // Footer
   const footerY = pageHeight - 52;
 
   doc
