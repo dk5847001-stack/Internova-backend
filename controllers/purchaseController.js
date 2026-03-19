@@ -5,6 +5,19 @@ const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 
+const resolveBrandingAsset = (fileNames = []) => {
+  const brandingDir = path.join(__dirname, "../uploads/branding");
+
+  for (const fileName of fileNames) {
+    const fullPath = path.join(brandingDir, fileName);
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  return null;
+};
+
 exports.getMyPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find({
@@ -119,13 +132,25 @@ exports.downloadOfferLetter = async (req, res) => {
 
     doc.pipe(res);
 
-    const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
-    const signaturePath = path.join(__dirname, "../uploads/branding/signature.png");
-    const sealPath = path.join(__dirname, "../uploads/branding/seal.png");
+    const logoPath =
+      resolveBrandingAsset(["logo.png", "brand_logo.png"]) || null;
+    const signaturePath =
+      resolveBrandingAsset(["signature.png"]) || null;
+    const sealPath =
+      resolveBrandingAsset(["seal.png", "stamp.png"]) || null;
 
-    const hasLogo = fs.existsSync(logoPath);
-    const hasSignature = fs.existsSync(signaturePath);
-    const hasSeal = fs.existsSync(sealPath);
+    const hasLogo = !!logoPath;
+    const hasSignature = !!signaturePath;
+    const hasSeal = !!sealPath;
+
+    console.log("Offer letter branding assets:", {
+      logoPath,
+      signaturePath,
+      sealPath,
+      hasLogo,
+      hasSignature,
+      hasSeal,
+    });
 
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
@@ -243,7 +268,11 @@ exports.downloadOfferLetter = async (req, res) => {
 
     let y = metaY + metaH + 14;
 
-    doc.font("Helvetica").fontSize(10.3).fillColor(colors.soft).text("To,", left, y);
+    doc
+      .font("Helvetica")
+      .fontSize(10.3)
+      .fillColor(colors.soft)
+      .text("To,", left, y);
 
     y += 14;
 
@@ -276,7 +305,7 @@ exports.downloadOfferLetter = async (req, res) => {
       .font("Helvetica-Bold")
       .fontSize(11)
       .fillColor(colors.text)
-      .text("Subject:  Formal Offer Letter of Internship Enrollment", left, y);
+      .text("Subject: Formal Offer Letter of Internship Enrollment", left, y);
 
     y += 20;
 
@@ -448,8 +477,10 @@ exports.downloadOfferLetter = async (req, res) => {
 
     if (hasSignature) {
       try {
-        doc.image(signaturePath, left, signBaseY - 4, {
-          fit: [125, 34],
+        doc.image(signaturePath, left, signBaseY - 8, {
+          fit: [140, 42],
+          align: "left",
+          valign: "center",
         });
       } catch (e) {
         console.error("Signature load error:", e.message);
@@ -478,10 +509,14 @@ exports.downloadOfferLetter = async (req, res) => {
 
     if (hasSeal) {
       try {
-        doc.image(sealPath, right - 130, signBaseY - 24, {
-          fit: [120, 120],
+        doc.save();
+        doc.opacity(0.95);
+        doc.image(sealPath, right - 145, signBaseY - 34, {
+          fit: [128, 128],
           align: "right",
+          valign: "center",
         });
+        doc.restore();
       } catch (e) {
         console.error("Seal load error:", e.message);
       }
