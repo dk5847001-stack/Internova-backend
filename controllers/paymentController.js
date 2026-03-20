@@ -20,11 +20,43 @@ const internshipPurchaseQuery = (userId, internshipId) => ({
   userId,
   internshipId,
   paymentStatus: "paid",
-  $or: [
-    { purchaseType: "internship" },
-    { purchaseType: { $exists: false } },
-  ],
+  $or: [{ purchaseType: "internship" }, { purchaseType: { $exists: false } }],
 });
+
+const getInternshipDurationLabel = (internship) => {
+  return (
+    internship?.duration ||
+    `${toNumber(internship?.durationDays, 30)} Days`
+  );
+};
+
+const getInternshipDurationDays = (internship) => {
+  return Math.max(1, toNumber(internship?.durationDays, 30));
+};
+
+const buildPurchaseResponse = (purchaseDoc) => {
+  const purchase = purchaseDoc?.toObject ? purchaseDoc.toObject() : purchaseDoc;
+  const internship = purchase?.internshipId || null;
+
+  return {
+    _id: purchase?._id || null,
+    userId: purchase?.userId || null,
+    internshipId:
+      internship && typeof internship === "object" ? internship._id : purchase?.internshipId || null,
+    internshipTitle:
+      internship && typeof internship === "object" ? internship.title || "" : "",
+    purchaseType: purchase?.purchaseType || "internship",
+    parentPurchaseId: purchase?.parentPurchaseId || null,
+    durationLabel: purchase?.durationLabel || "",
+    selectedDurationDays: Math.max(1, toNumber(purchase?.selectedDurationDays, 30)),
+    amount: toNumber(purchase?.amount, 0),
+    paymentStatus: purchase?.paymentStatus || "created",
+    razorpayOrderId: purchase?.razorpayOrderId || "",
+    razorpayPaymentId: purchase?.razorpayPaymentId || "",
+    createdAt: purchase?.createdAt || null,
+    updatedAt: purchase?.updatedAt || null,
+  };
+};
 
 exports.createOrder = async (req, res) => {
   try {
@@ -79,7 +111,7 @@ exports.createOrder = async (req, res) => {
         });
       }
 
-      const unlockAllPrice = toNumber(internship.unlockAllPrice, 99);
+      const unlockAllPrice = Math.max(1, toNumber(internship.unlockAllPrice, 99));
 
       if (unlockAllPrice <= 0) {
         return res.status(400).json({
@@ -108,11 +140,15 @@ exports.createOrder = async (req, res) => {
         purchaseType: "unlock_all",
         parentPurchaseId: basePaidPurchase._id,
         durationLabel:
-          basePaidPurchase.durationLabel ||
-          internship.duration ||
-          `${internship.durationDays || 30} Days`,
+          basePaidPurchase.durationLabel || getInternshipDurationLabel(internship),
         selectedDurationDays:
-          basePaidPurchase.selectedDurationDays || internship.durationDays || 30,
+          Math.max(
+            1,
+            toNumber(
+              basePaidPurchase.selectedDurationDays,
+              getInternshipDurationDays(internship)
+            )
+          ),
         amount: unlockAllPrice,
         razorpayOrderId: order.id,
         paymentStatus: "created",
@@ -124,6 +160,7 @@ exports.createOrder = async (req, res) => {
         order,
         purchaseType: "unlock_all",
         internship: {
+          _id: internship._id,
           title: internship.title,
         },
         unlockAll: {
@@ -157,16 +194,17 @@ exports.createOrder = async (req, res) => {
       }
     } else {
       selectedDuration = {
-        label:
-          durationLabel ||
-          internship.duration ||
-          `${internship.durationDays || 30} Days`,
+        label: durationLabel || getInternshipDurationLabel(internship),
         price: internship.price || 0,
-        durationDays: internship.durationDays || 30,
+        durationDays: getInternshipDurationDays(internship),
       };
     }
 
     const finalPrice = toNumber(selectedDuration.price, 0);
+    const finalDurationDays = Math.max(
+      1,
+      toNumber(selectedDuration.durationDays, getInternshipDurationDays(internship))
+    );
 
     if (finalPrice <= 0) {
       return res.status(400).json({
@@ -180,10 +218,7 @@ exports.createOrder = async (req, res) => {
       internshipId,
       durationLabel: selectedDuration.label,
       paymentStatus: "paid",
-      $or: [
-        { purchaseType: "internship" },
-        { purchaseType: { $exists: false } },
-      ],
+      $or: [{ purchaseType: "internship" }, { purchaseType: { $exists: false } }],
     });
 
     if (existingPaidPurchase) {
@@ -200,7 +235,7 @@ exports.createOrder = async (req, res) => {
       notes: {
         internshipId: internship._id.toString(),
         durationLabel: selectedDuration.label,
-        durationDays: String(selectedDuration.durationDays || 30),
+        durationDays: String(finalDurationDays),
         userId: String(userId),
         purchaseType: "internship",
       },
@@ -213,7 +248,7 @@ exports.createOrder = async (req, res) => {
       internshipId: internship._id,
       purchaseType: "internship",
       durationLabel: selectedDuration.label,
-      selectedDurationDays: selectedDuration.durationDays || 30,
+      selectedDurationDays: finalDurationDays,
       amount: finalPrice,
       razorpayOrderId: order.id,
       paymentStatus: "created",
@@ -225,12 +260,13 @@ exports.createOrder = async (req, res) => {
       order,
       purchaseType: "internship",
       internship: {
+        _id: internship._id,
         title: internship.title,
       },
       duration: {
         label: selectedDuration.label,
         price: finalPrice,
-        durationDays: selectedDuration.durationDays || 30,
+        durationDays: finalDurationDays,
       },
     });
   } catch (error) {
@@ -271,7 +307,7 @@ exports.verifyPayment = async (req, res) => {
 
     const purchase = await Purchase.findOne({
       razorpayOrderId: razorpay_order_id,
-    });
+    }).populate("internshipId", "_id title");
 
     if (!purchase) {
       return res.status(404).json({
@@ -281,11 +317,16 @@ exports.verifyPayment = async (req, res) => {
     }
 
     if (purchase.paymentStatus === "paid") {
+      const formattedPurchase = buildPurchaseResponse(purchase);
+
       return res.status(200).json({
         success: true,
         message: "Payment already verified",
-        purchase,
+        purchase: formattedPurchase,
         slipDownloadUrl: `/api/payments/slip/${purchase._id}`,
+        redirectTo: formattedPurchase.internshipId
+          ? `/dashboard/course/${formattedPurchase.internshipId}`
+          : "/dashboard",
       });
     }
 
@@ -297,7 +338,7 @@ exports.verifyPayment = async (req, res) => {
     if (purchase.purchaseType === "unlock_all") {
       const progress = await Progress.findOne({
         userId: purchase.userId,
-        internshipId: purchase.internshipId,
+        internshipId: purchase.internshipId?._id || purchase.internshipId,
       });
 
       if (progress && !progress.unlockAllPurchased) {
@@ -306,11 +347,16 @@ exports.verifyPayment = async (req, res) => {
       }
     }
 
+    const formattedPurchase = buildPurchaseResponse(purchase);
+
     return res.status(200).json({
       success: true,
       message: "Payment verified successfully",
-      purchase,
+      purchase: formattedPurchase,
       slipDownloadUrl: `/api/payments/slip/${purchase._id}`,
+      redirectTo: formattedPurchase.internshipId
+        ? `/dashboard/course/${formattedPurchase.internshipId}`
+        : "/dashboard",
     });
   } catch (error) {
     console.error("VERIFY PAYMENT ERROR:", error);

@@ -5,9 +5,51 @@ const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 
+const formatDate = (date) =>
+  new Date(date).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+const toIdString = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return String(value._id);
+  return String(value);
+};
+
+const normalizeStatus = (status = "") => String(status).toLowerCase().trim();
+
+const normalizePurchaseType = (purchaseType = "") =>
+  String(purchaseType || "internship").toLowerCase().trim();
+
+const getPurchasePriority = (purchase) => {
+  const status = normalizeStatus(purchase?.paymentStatus);
+  const purchaseType = normalizePurchaseType(purchase?.purchaseType);
+
+  let score = 0;
+
+  if (purchaseType === "internship") score += 1000;
+  if (!purchase?.purchaseType) score += 1000;
+
+  if (status === "paid") score += 10000;
+  else if (status === "captured") score += 9000;
+  else if (status === "created") score += 100;
+  else if (status === "pending") score += 50;
+  else score += 10;
+
+  if (purchase?.razorpayPaymentId) score += 100;
+  if (purchase?.createdAt) {
+    score += Math.floor(new Date(purchase.createdAt).getTime() / 100000000);
+  }
+
+  return score;
+};
+
 exports.getMyPurchases = async (req, res) => {
   try {
-    const purchases = await Purchase.find({
+    const rawPurchases = await Purchase.find({
       userId: req.user.id,
       $or: [
         { purchaseType: "internship" },
@@ -17,23 +59,61 @@ exports.getMyPurchases = async (req, res) => {
       .populate("internshipId")
       .sort({ createdAt: -1 });
 
-    const formatDate = (date) =>
-      new Date(date).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
+    const purchaseMap = new Map();
 
-    const enhancedPurchases = purchases.map((purchase) => {
+    for (const purchase of rawPurchases) {
+      const internship = purchase.internshipId || null;
+      const internshipId = toIdString(internship?._id || purchase.internshipId);
+
+      if (!internshipId) {
+        continue;
+      }
+
+      const existing = purchaseMap.get(internshipId);
+
+      if (!existing) {
+        purchaseMap.set(internshipId, purchase);
+        continue;
+      }
+
+      const currentPriority = getPurchasePriority(purchase);
+      const existingPriority = getPurchasePriority(existing);
+
+      if (currentPriority > existingPriority) {
+        purchaseMap.set(internshipId, purchase);
+        continue;
+      }
+
+      if (
+        currentPriority === existingPriority &&
+        new Date(purchase.createdAt).getTime() >
+          new Date(existing.createdAt).getTime()
+      ) {
+        purchaseMap.set(internshipId, purchase);
+      }
+    }
+
+    const filteredPurchases = Array.from(purchaseMap.values()).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    const enhancedPurchases = filteredPurchases.map((purchase) => {
       const internship = purchase.internshipId || {};
+      const normalizedPaymentStatus = normalizeStatus(purchase.paymentStatus);
 
       return {
         _id: purchase._id,
         purchaseId: purchase._id,
         internshipId: internship._id || null,
-        paymentStatus: purchase.paymentStatus,
+        paymentStatus:
+          normalizedPaymentStatus === "paid"
+            ? "paid"
+            : normalizedPaymentStatus === "captured"
+            ? "paid"
+            : purchase.paymentStatus || "created",
         amount: purchase.amount,
         durationLabel: purchase.durationLabel,
+        selectedDurationDays: purchase.selectedDurationDays || null,
         purchaseType: purchase.purchaseType || "internship",
         createdAt: purchase.createdAt,
         issueDate: formatDate(purchase.createdAt),
@@ -41,9 +121,12 @@ exports.getMyPurchases = async (req, res) => {
         razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
         razorpayOrderId: purchase.razorpayOrderId || "N/A",
         offerLetterAvailable:
-          purchase.paymentStatus === "paid" &&
+          (normalizedPaymentStatus === "paid" ||
+            normalizedPaymentStatus === "captured") &&
           (purchase.purchaseType === "internship" || !purchase.purchaseType),
-        paymentSlipAvailable: purchase.paymentStatus === "paid",
+        paymentSlipAvailable:
+          normalizedPaymentStatus === "paid" ||
+          normalizedPaymentStatus === "captured",
         downloadUrl: `/purchases/offer-letter/${purchase._id}`,
         paymentSlipUrl: `/payments/slip/${purchase._id}`,
         internshipTitle: internship.title || "N/A",
@@ -120,7 +203,10 @@ exports.downloadOfferLetter = async (req, res) => {
     doc.pipe(res);
 
     const logoPath = path.join(__dirname, "../uploads/branding/logo.png");
-    const signaturePath = path.join(__dirname, "../uploads/branding/signature.png");
+    const signaturePath = path.join(
+      __dirname,
+      "../uploads/branding/signature.png"
+    );
     const sealPath = path.join(__dirname, "../uploads/branding/seal.png");
 
     const hasLogo = fs.existsSync(logoPath);
@@ -149,13 +235,6 @@ exports.downloadOfferLetter = async (req, res) => {
       green: "#065F46",
       greenBg: "#D1FAE5",
     };
-
-    const formatDate = (date) =>
-      new Date(date).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
 
     const issueDate = formatDate(new Date());
     const referenceId = `INV-${purchase._id.toString().slice(-6).toUpperCase()}`;
@@ -243,7 +322,11 @@ exports.downloadOfferLetter = async (req, res) => {
 
     let y = metaY + metaH + 14;
 
-    doc.font("Helvetica").fontSize(10.3).fillColor(colors.soft).text("To,", left, y);
+    doc
+      .font("Helvetica")
+      .fontSize(10.3)
+      .fillColor(colors.soft)
+      .text("To,", left, y);
 
     y += 14;
 
@@ -288,7 +371,9 @@ exports.downloadOfferLetter = async (req, res) => {
 
     y += 18;
 
-    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted offer for a duration of ${purchase.durationLabel || "the selected period"}.`;
+    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted offer for a duration of ${
+      purchase.durationLabel || "the selected period"
+    }.`;
 
     const bodyText2 = `This program is designed to provide structured learning, guided practical exposure, and domain-focused skill development. You are expected to complete the assigned modules, maintain the required progress, and follow the applicable assessment guidelines during the offer period.`;
 
