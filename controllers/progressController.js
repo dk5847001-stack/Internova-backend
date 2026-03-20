@@ -18,10 +18,19 @@ const sortByOrder = (items = []) => {
 
 const getUserId = (req) => req.user?.id || req.user?._id;
 
+const normalizePaymentStatus = (status = "") =>
+  String(status || "").toLowerCase().trim();
+
+const isPaidStatus = (status = "") => {
+  const normalized = normalizePaymentStatus(status);
+  return normalized === "paid" || normalized === "captured";
+};
+
 const calculateCompletedDays = (enrolledAt, selectedDurationDays) => {
   const safeDurationDays = Math.max(0, toNumber(selectedDurationDays, 0));
 
   if (!enrolledAt) return 0;
+  if (safeDurationDays <= 0) return 0;
 
   const start = new Date(enrolledAt);
   const today = new Date();
@@ -67,6 +76,11 @@ const findVideoInModule = (module, videoId) => {
   );
 };
 
+const toPlainModule = (module) => {
+  if (!module) return {};
+  return typeof module.toObject === "function" ? module.toObject() : { ...module };
+};
+
 const isModuleUnlocked = (progressDoc, module) => {
   if (!module) return false;
 
@@ -87,15 +101,21 @@ const getUnlockedModules = (internship, progressDoc) => {
     progressDoc.selectedDurationDays
   );
 
-  return sortByOrder(internship.modules).map((module, moduleIndex) => ({
-    ...module.toObject(),
-    order: toNumber(module.order, moduleIndex + 1),
-    unlockDay: Math.max(1, toNumber(module.unlockDay, moduleIndex + 1)),
-    videos: sortByOrder(module.videos),
-    isUnlocked:
-      progressDoc.unlockAllPurchased ||
-      completedDays >= Math.max(1, toNumber(module.unlockDay, moduleIndex + 1)),
-  }));
+  return sortByOrder(internship.modules).map((module, moduleIndex) => {
+    const plainModule = toPlainModule(module);
+    const sortedVideos = sortByOrder(plainModule.videos);
+
+    return {
+      ...plainModule,
+      order: toNumber(plainModule.order, moduleIndex + 1),
+      unlockDay: Math.max(1, toNumber(plainModule.unlockDay, moduleIndex + 1)),
+      videos: sortedVideos,
+      isUnlocked:
+        Boolean(progressDoc.unlockAllPurchased) ||
+        completedDays >=
+          Math.max(1, toNumber(plainModule.unlockDay, moduleIndex + 1)),
+    };
+  });
 };
 
 const calculateProgressStats = (internship, progressDoc) => {
@@ -132,7 +152,10 @@ const calculateProgressStats = (internship, progressDoc) => {
         (item) => String(item.videoId) === String(video._id)
       );
 
-      return toNumber(matchedProgress?.watchedPercent, 0) >= 80;
+      return (
+        toNumber(matchedProgress?.watchedPercent, 0) >= 80 ||
+        Boolean(matchedProgress?.completed)
+      );
     });
   }).length;
 
@@ -164,6 +187,7 @@ const applyDerivedProgressFields = async (
   }
 
   const stats = calculateProgressStats(internship, progressDoc);
+
   progressDoc.totalModules = stats.totalModules;
   progressDoc.totalVideos = stats.totalVideos;
   progressDoc.completedModules = stats.completedModules;
@@ -179,13 +203,12 @@ const applyDerivedProgressFields = async (
     progressDoc.completedDays >= toNumber(progressDoc.selectedDurationDays, 0);
 
   progressDoc.miniTestUnlocked =
-    progressDoc.overallProgress >= toNumber(
-      internship.miniTestUnlockProgress,
-      80
-    );
+    progressDoc.overallProgress >= toNumber(internship.miniTestUnlockProgress, 80);
 
   progressDoc.certificateEligible =
-    Boolean(internship.certificateEnabled) &&
+    (typeof internship.certificateEnabled === "boolean"
+      ? internship.certificateEnabled
+      : true) &&
     progressDoc.overallProgress >= toNumber(internship.requiredProgress, 80) &&
     Boolean(progressDoc.miniTestPassed) &&
     Boolean(progressDoc.durationCompleted);
@@ -193,7 +216,12 @@ const applyDerivedProgressFields = async (
   return progressDoc;
 };
 
-const ensureProgressDoc = async ({ internship, internshipId, purchase, userId }) => {
+const ensureProgressDoc = async ({
+  internship,
+  internshipId,
+  purchase,
+  userId,
+}) => {
   let progress = await Progress.findOne({
     userId,
     internshipId,
@@ -222,13 +250,29 @@ const ensureProgressDoc = async ({ internship, internshipId, purchase, userId })
       unlockAllPurchased: false,
       videoProgress: [],
     });
+  } else {
+    if (!progress.purchaseId) {
+      progress.purchaseId = purchase._id;
+    }
+
+    if (!progress.enrolledAt) {
+      progress.enrolledAt = purchase.createdAt || new Date();
+    }
+
+    const expectedDurationDays = getSelectedDurationDays(purchase, internship);
+    if (
+      toNumber(progress.selectedDurationDays, 0) !==
+      toNumber(expectedDurationDays, 0)
+    ) {
+      progress.selectedDurationDays = expectedDurationDays;
+    }
   }
 
   const paidUnlockAllPurchase = await Purchase.findOne({
     userId,
     internshipId,
     purchaseType: "unlock_all",
-    paymentStatus: "paid",
+    paymentStatus: { $in: ["paid", "captured"] },
   });
 
   if (paidUnlockAllPurchase && !progress.unlockAllPurchased) {
@@ -241,12 +285,18 @@ const ensureProgressDoc = async ({ internship, internshipId, purchase, userId })
 const internshipPurchaseQuery = (userId, internshipId) => ({
   userId,
   internshipId,
-  paymentStatus: "paid",
+  paymentStatus: { $in: ["paid", "captured"] },
   $or: [
     { purchaseType: "internship" },
     { purchaseType: { $exists: false } },
   ],
 });
+
+const getLatestPaidPurchase = async (userId, internshipId) => {
+  return Purchase.findOne(internshipPurchaseQuery(userId, internshipId)).sort({
+    createdAt: -1,
+  });
+};
 
 // @desc   Get full course progress page data
 // @route  GET /api/progress/course/:internshipId
@@ -263,6 +313,13 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -271,9 +328,7 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne(
-      internshipPurchaseQuery(userId, internshipId)
-    ).sort({ createdAt: -1 });
+    const purchase = await getLatestPaidPurchase(userId, internshipId);
 
     if (!purchase) {
       return res.status(403).json({
@@ -302,6 +357,7 @@ exports.getCourseProgress = async (req, res) => {
         category: internship.category,
         branch: internship.branch,
         duration:
+          purchase.durationLabel ||
           internship.duration ||
           `${getSelectedDurationDays(purchase, internship)} Days`,
         durationDays: getSelectedDurationDays(purchase, internship),
@@ -342,6 +398,13 @@ exports.updateVideoProgress = async (req, res) => {
     const { moduleId, videoId, watchedPercent } = req.body;
     const userId = getUserId(req);
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     if (!moduleId || !videoId || watchedPercent === undefined) {
       return res.status(400).json({
         success: false,
@@ -357,9 +420,7 @@ exports.updateVideoProgress = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne(
-      internshipPurchaseQuery(userId, internshipId)
-    ).sort({ createdAt: -1 });
+    const purchase = await getLatestPaidPurchase(userId, internshipId);
 
     if (!purchase) {
       return res.status(403).json({
@@ -452,6 +513,13 @@ exports.unlockAllModules = async (req, res) => {
     const { internshipId } = req.params;
     const userId = getUserId(req);
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -460,9 +528,7 @@ exports.unlockAllModules = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne(
-      internshipPurchaseQuery(userId, internshipId)
-    ).sort({ createdAt: -1 });
+    const purchase = await getLatestPaidPurchase(userId, internshipId);
 
     if (!purchase) {
       return res.status(403).json({
@@ -475,7 +541,7 @@ exports.unlockAllModules = async (req, res) => {
       userId,
       internshipId,
       purchaseType: "unlock_all",
-      paymentStatus: "paid",
+      paymentStatus: { $in: ["paid", "captured"] },
     });
 
     if (!paidUnlockAllPurchase) {
@@ -519,6 +585,13 @@ exports.getEligibilityStatus = async (req, res) => {
     const { internshipId } = req.params;
     const userId = getUserId(req);
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -527,9 +600,7 @@ exports.getEligibilityStatus = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne(
-      internshipPurchaseQuery(userId, internshipId)
-    ).sort({ createdAt: -1 });
+    const purchase = await getLatestPaidPurchase(userId, internshipId);
 
     if (!purchase) {
       return res.status(403).json({
