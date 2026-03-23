@@ -38,7 +38,7 @@ const generateCertificatePdf = ({
       stream.on("error", (err) => reject(err));
 
       const safeStudentName = studentName || "Student Name";
-      const safeInternshipTitle = internshipTitle || "Internship Program";
+      const safeInternshipTitle = internshipTitle || "Training Program";
       const safeDuration = duration || "Not specified";
       const safeIssueDate = issueDate
         ? new Date(issueDate).toLocaleDateString("en-IN")
@@ -148,7 +148,7 @@ const verifyUrl = `${process.env.CLIENT_URL}/verify/${certificate.certificateId}
         .fontSize(16)
         .fillColor("#334155")
         .text(
-          `for successfully completing the internship program "${safeInternshipTitle}"`,
+          `for successfully completing the Training Program "${safeInternshipTitle}"`,
           110,
           280,
           {

@@ -646,7 +646,7 @@ exports.downloadCertificate = async (req, res) => {
       .fontSize(15.5)
       .fillColor(colors.text)
       .text(
-        `has successfully completed the ${internship?.title || "Internship Program"}`,
+        `has successfully completed the ${internship?.title || "Training Program"}`,
         left,
         238,
         {
@@ -827,7 +827,7 @@ exports.verifyCertificate = async (req, res) => {
         issuedAt: certificate.issuedAt,
         candidateName: user?.name || "Candidate",
         candidateEmail: user?.email || "",
-        internshipTitle: internship?.title || "Internship Program",
+        internshipTitle: internship?.title || "Training Program",
         branch: internship?.branch || "",
         category: internship?.category || "",
         status: certificate.status,

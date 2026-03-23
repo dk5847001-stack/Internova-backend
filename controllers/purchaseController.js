@@ -371,7 +371,7 @@ exports.downloadOfferLetter = async (req, res) => {
 
     y += 18;
 
-    const bodyText1 = `We are pleased to confirm your enrollment in the training program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted offer for a duration of ${
+    const bodyText1 = `We are pleased to confirm your enrollment in the Training Program "${internshipTitle}" offered by Internova. Based on your successful registration and payment confirmation, you have been granted offer for a duration of ${
       purchase.durationLabel || "the selected period"
     }.`;
 
