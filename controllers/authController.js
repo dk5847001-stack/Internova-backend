@@ -79,14 +79,14 @@ const sendVerificationOtpEmail = async ({ email, name, otp }) => {
     <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
       <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 18px; overflow: hidden; border: 1px solid #e2e8f0;">
         <div style="padding: 24px 28px; background: linear-gradient(135deg, #0b1736 0%, #142850 45%, #1d4ed8 100%); color: #ffffff;">
-          <h2 style="margin: 0; font-size: 24px;">Internova</h2>
+          <h2 style="margin: 0; font-size: 24px;">InternovaTech</h2>
           <p style="margin: 8px 0 0; opacity: 0.9;">Email Verification</p>
         </div>
 
         <div style="padding: 28px;">
           <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${name || "User"},</p>
           <p style="font-size: 15px; color: #475569; line-height: 1.7;">
-            Use the OTP below to verify your email address for your Internova account.
+            Use the OTP below to verify your email address for your InternovaTech account.
           </p>
 
           <div style="margin: 24px 0; text-align: center;">

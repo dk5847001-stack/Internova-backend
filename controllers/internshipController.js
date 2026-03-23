@@ -87,14 +87,26 @@ const sanitizeQuiz = (quiz = []) => {
     }));
 };
 
+const buildSlug = (value = "") => {
+  return toTrimmedString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+};
+
 const sanitizeInternshipPayload = (body = {}) => {
   const cleanedDurations = sanitizeDurations(body.durations);
   const cleanedModules = sanitizeModules(body.modules);
   const cleanedQuiz = sanitizeQuiz(body.quiz);
 
+  const title = toTrimmedString(body.title);
+  const slug = toTrimmedString(body.slug) || buildSlug(title);
+
   return {
-    title: toTrimmedString(body.title),
-    slug: toTrimmedString(body.slug),
+    title,
+    slug,
     branch: toTrimmedString(body.branch),
     category: toTrimmedString(body.category),
     description: toTrimmedString(body.description),
@@ -103,10 +115,19 @@ const sanitizeInternshipPayload = (body = {}) => {
     durations: cleanedDurations,
     modules: cleanedModules,
     quiz: cleanedQuiz,
-    requiredProgress: toNumber(body.requiredProgress, 80),
-    miniTestUnlockProgress: toNumber(body.miniTestUnlockProgress, 80),
-    miniTestPassMarks: toNumber(body.miniTestPassMarks, 60),
-    unlockAllPrice: toNumber(body.unlockAllPrice, 99),
+    requiredProgress: Math.min(
+      100,
+      Math.max(1, toNumber(body.requiredProgress, 80))
+    ),
+    miniTestUnlockProgress: Math.min(
+      100,
+      Math.max(1, toNumber(body.miniTestUnlockProgress, 80))
+    ),
+    miniTestPassMarks: Math.min(
+      100,
+      Math.max(1, toNumber(body.miniTestPassMarks, 60))
+    ),
+    unlockAllPrice: Math.max(0, toNumber(body.unlockAllPrice, 99)),
     certificateEnabled:
       typeof body.certificateEnabled === "boolean"
         ? body.certificateEnabled
@@ -115,12 +136,33 @@ const sanitizeInternshipPayload = (body = {}) => {
   };
 };
 
+const validateInternshipPayload = (payload) => {
+  if (!payload.title || !payload.branch || !payload.description) {
+    return "Title, branch and description are required";
+  }
+
+  if (!payload.category) {
+    return "Category is required";
+  }
+
+  if (!payload.durations.length) {
+    return "At least one valid duration is required";
+  }
+
+  if (!payload.modules.length) {
+    return "At least one valid module with video is required";
+  }
+
+  return null;
+};
+
 // GET all internships
 exports.getAllInternships = async (req, res) => {
   try {
-    const internships = await Internship.find({ isActive: true }).sort({
-      createdAt: -1,
-    });
+    const internships = await Internship.find({ isActive: true })
+      .select("-__v")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -139,7 +181,10 @@ exports.getAllInternships = async (req, res) => {
 // GET all internships for admin
 exports.getAllInternshipsAdmin = async (req, res) => {
   try {
-    const internships = await Internship.find().sort({ createdAt: -1 });
+    const internships = await Internship.find({})
+      .select("-__v")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -166,23 +211,32 @@ exports.getAdminInternshipStats = async (req, res) => {
       passedResults,
       progresses,
     ] = await Promise.all([
-      Internship.find().sort({ createdAt: -1 }),
-      User.find()
+      Internship.find({})
+        .select(
+          "title branch category isActive modules quiz createdAt updatedAt"
+        )
+        .sort({ createdAt: -1 })
+        .lean(),
+      User.find({})
         .select("name email role createdAt lastLoginAt isActive")
-        .sort({ createdAt: -1 }),
-      Purchase.find()
+        .sort({ createdAt: -1 })
+        .lean(),
+      Purchase.find({})
         .populate("userId", "name email role lastLoginAt isActive createdAt")
         .populate("internshipId", "title branch category")
-        .sort({ createdAt: -1 }),
-      Certificate.find({ status: "issued" }).select(
-        "userId internshipId certificateId issuedAt status"
-      ),
-      TestResult.find({ passed: true }).select(
-        "userId internshipId percentage passed submittedAt"
-      ),
-      Progress.find().select(
-        "userId internshipId overallProgress miniTestPassed certificateEligible completedDays durationCompleted unlockAllPurchased updatedAt"
-      ),
+        .sort({ createdAt: -1 })
+        .lean(),
+      Certificate.find({ status: "issued" })
+        .select("userId internshipId certificateId issuedAt status")
+        .lean(),
+      TestResult.find({ passed: true })
+        .select("userId internshipId percentage passed submittedAt")
+        .lean(),
+      Progress.find({})
+        .select(
+          "userId internshipId overallProgress miniTestPassed certificateEligible completedDays durationCompleted unlockAllPurchased updatedAt"
+        )
+        .lean(),
     ]);
 
     const totalPrograms = internships.length;
@@ -250,14 +304,14 @@ exports.getAdminInternshipStats = async (req, res) => {
     );
 
     const purchaseCountByUser = purchases.reduce((acc, purchase) => {
-      const userId = String(purchase.userId?._id || purchase.userId);
-      acc[userId] = (acc[userId] || 0) + 1;
+      const userId = String(purchase.userId?._id || purchase.userId || "");
+      if (userId) acc[userId] = (acc[userId] || 0) + 1;
       return acc;
     }, {});
 
     const certificateCountByUser = certificates.reduce((acc, certificate) => {
-      const userId = String(certificate.userId);
-      acc[userId] = (acc[userId] || 0) + 1;
+      const userId = String(certificate.userId || "");
+      if (userId) acc[userId] = (acc[userId] || 0) + 1;
       return acc;
     }, {});
 
@@ -381,7 +435,9 @@ exports.getAdminInternshipStats = async (req, res) => {
 // GET single internship
 exports.getSingleInternship = async (req, res) => {
   try {
-    const internship = await Internship.findById(req.params.id);
+    const internship = await Internship.findById(req.params.id)
+      .select("-__v")
+      .lean();
 
     if (!internship) {
       return res.status(404).json({
@@ -407,43 +463,39 @@ exports.getSingleInternship = async (req, res) => {
 exports.createInternship = async (req, res) => {
   try {
     const payload = sanitizeInternshipPayload(req.body);
+    const validationError = validateInternshipPayload(payload);
 
-    if (!payload.title || !payload.branch || !payload.description) {
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        message: "Title, branch and description are required",
+        message: validationError,
       });
     }
 
-    if (!payload.category) {
+    const existingSlug = await Internship.findOne({ slug: payload.slug })
+      .select("_id")
+      .lean();
+
+    if (existingSlug) {
       return res.status(400).json({
         success: false,
-        message: "Category is required",
+        message: "An internship with this slug already exists",
       });
     }
 
-    if (!payload.durations.length) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one valid duration is required",
-      });
-    }
-
-    if (!payload.modules.length) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one valid module with video is required",
-      });
-    }
+    const firstDuration = payload.durations[0] || {};
 
     const internship = await Internship.create({
       title: payload.title,
-      slug: payload.slug || "",
+      slug: payload.slug,
       branch: payload.branch,
       category: payload.category,
       description: payload.description,
       thumbnail: payload.thumbnail,
       image: payload.image,
+      duration: firstDuration.label || "",
+      durationDays: firstDuration.durationDays || 30,
+      price: firstDuration.price || 0,
       durations: payload.durations,
       modules: payload.modules,
       quiz: payload.quiz,
@@ -482,42 +534,41 @@ exports.updateInternship = async (req, res) => {
     }
 
     const payload = sanitizeInternshipPayload(req.body);
+    const validationError = validateInternshipPayload(payload);
 
-    if (!payload.title || !payload.branch || !payload.description) {
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        message: "Title, branch and description are required",
+        message: validationError,
       });
     }
 
-    if (!payload.category) {
+    const existingSlug = await Internship.findOne({
+      slug: payload.slug,
+      _id: { $ne: req.params.id },
+    })
+      .select("_id")
+      .lean();
+
+    if (existingSlug) {
       return res.status(400).json({
         success: false,
-        message: "Category is required",
+        message: "Another internship with this slug already exists",
       });
     }
 
-    if (!payload.durations.length) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one valid duration is required",
-      });
-    }
-
-    if (!payload.modules.length) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one valid module with video is required",
-      });
-    }
+    const firstDuration = payload.durations[0] || {};
 
     internship.title = payload.title;
-    internship.slug = payload.slug || "";
+    internship.slug = payload.slug;
     internship.branch = payload.branch;
     internship.category = payload.category;
     internship.description = payload.description;
     internship.thumbnail = payload.thumbnail;
     internship.image = payload.image;
+    internship.duration = firstDuration.label || "";
+    internship.durationDays = firstDuration.durationDays || 30;
+    internship.price = firstDuration.price || 0;
     internship.durations = payload.durations;
     internship.modules = payload.modules;
     internship.quiz = payload.quiz;
@@ -547,7 +598,7 @@ exports.updateInternship = async (req, res) => {
 // DELETE internship
 exports.deleteInternship = async (req, res) => {
   try {
-    const internship = await Internship.findById(req.params.id);
+    const internship = await Internship.findById(req.params.id).select("_id");
 
     if (!internship) {
       return res.status(404).json({

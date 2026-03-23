@@ -104,7 +104,6 @@ const internshipSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // fallback single duration fields
     duration: {
       type: String,
       default: "",
@@ -119,13 +118,9 @@ const internshipSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // ✅ main pricing plans
     durations: [durationSchema],
-
-    // learning structure
     modules: [moduleSchema],
 
-    // rules
     requiredProgress: {
       type: Number,
       default: 80,
@@ -172,6 +167,12 @@ const internshipSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Important indexes for fast sorting/filtering
+internshipSchema.index({ createdAt: -1 });
+internshipSchema.index({ isActive: 1, createdAt: -1 });
+internshipSchema.index({ category: 1, createdAt: -1 });
+internshipSchema.index({ branch: 1, createdAt: -1 });
 
 module.exports =
   mongoose.models.Internship || mongoose.model("Internship", internshipSchema);
