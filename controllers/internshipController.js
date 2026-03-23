@@ -4,7 +4,7 @@ const Purchase = require("../models/Purchase");
 const Certificate = require("../models/Certificate");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
-const { convertVideoUrlToEmbedUrl } = require("../utils/googleDrive");
+const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -18,7 +18,7 @@ const toTrimmedString = (value) => {
 const normalizeVideoUrl = (url = "") => {
   const trimmedUrl = toTrimmedString(url);
   if (!trimmedUrl) return "";
-  return convertVideoUrlToEmbedUrl(trimmedUrl);
+  return convertGoogleDriveToPreviewUrl(trimmedUrl);
 };
 
 const sanitizeDurations = (durations = []) => {
@@ -61,9 +61,7 @@ const sanitizeModules = (modules = []) => {
             .filter((video) => video.videoUrl)
         : [],
     }))
-    .filter(
-      (module) => Array.isArray(module.videos) && module.videos.length > 0
-    );
+    .filter((module) => Array.isArray(module.videos) && module.videos.length > 0);
 };
 
 const sanitizeQuiz = (quiz = []) => {
@@ -80,10 +78,7 @@ const sanitizeQuiz = (quiz = []) => {
     .map((question) => ({
       question: toTrimmedString(question.question),
       options: question.options.map((option) => toTrimmedString(option)),
-      correctAnswer: Math.min(
-        3,
-        Math.max(0, toNumber(question.correctAnswer, 0))
-      ),
+      correctAnswer: Math.min(3, Math.max(0, toNumber(question.correctAnswer, 0))),
     }));
 };
 
@@ -115,23 +110,15 @@ const sanitizeInternshipPayload = (body = {}) => {
     durations: cleanedDurations,
     modules: cleanedModules,
     quiz: cleanedQuiz,
-    requiredProgress: Math.min(
-      100,
-      Math.max(1, toNumber(body.requiredProgress, 80))
-    ),
+    requiredProgress: Math.min(100, Math.max(1, toNumber(body.requiredProgress, 80))),
     miniTestUnlockProgress: Math.min(
       100,
       Math.max(1, toNumber(body.miniTestUnlockProgress, 80))
     ),
-    miniTestPassMarks: Math.min(
-      100,
-      Math.max(1, toNumber(body.miniTestPassMarks, 60))
-    ),
+    miniTestPassMarks: Math.min(100, Math.max(1, toNumber(body.miniTestPassMarks, 60))),
     unlockAllPrice: Math.max(0, toNumber(body.unlockAllPrice, 99)),
     certificateEnabled:
-      typeof body.certificateEnabled === "boolean"
-        ? body.certificateEnabled
-        : true,
+      typeof body.certificateEnabled === "boolean" ? body.certificateEnabled : true,
     isActive: typeof body.isActive === "boolean" ? body.isActive : true,
   };
 };
@@ -156,12 +143,12 @@ const validateInternshipPayload = (payload) => {
   return null;
 };
 
-// GET all internships
+// PUBLIC LIST
 exports.getAllInternships = async (req, res) => {
   try {
     const internships = await Internship.find({ isActive: true })
       .select("-__v")
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
       .lean();
 
     return res.status(200).json({
@@ -178,12 +165,12 @@ exports.getAllInternships = async (req, res) => {
   }
 };
 
-// GET all internships for admin
+// ADMIN LIST
 exports.getAllInternshipsAdmin = async (req, res) => {
   try {
     const internships = await Internship.find({})
       .select("-__v")
-      .sort({ createdAt: -1 })
+      .sort({ _id: -1 })
       .lean();
 
     return res.status(200).json({
@@ -200,7 +187,7 @@ exports.getAllInternshipsAdmin = async (req, res) => {
   }
 };
 
-// GET admin dashboard stats
+// ADMIN DASHBOARD STATS
 exports.getAdminInternshipStats = async (req, res) => {
   try {
     const [
@@ -212,19 +199,17 @@ exports.getAdminInternshipStats = async (req, res) => {
       progresses,
     ] = await Promise.all([
       Internship.find({})
-        .select(
-          "title branch category isActive modules quiz createdAt updatedAt"
-        )
-        .sort({ createdAt: -1 })
+        .select("title branch category isActive modules quiz createdAt updatedAt")
+        .sort({ _id: -1 })
         .lean(),
       User.find({})
         .select("name email role createdAt lastLoginAt isActive")
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .lean(),
       Purchase.find({})
         .populate("userId", "name email role lastLoginAt isActive createdAt")
         .populate("internshipId", "title branch category")
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .lean(),
       Certificate.find({ status: "issued" })
         .select("userId internshipId certificateId issuedAt status")
@@ -267,9 +252,7 @@ exports.getAdminInternshipStats = async (req, res) => {
     const totalAdmins = users.filter((user) => user.role === "admin").length;
     const totalNormalUsers = totalUsers - totalAdmins;
     const activeUsers = users.filter((user) => user.isActive !== false).length;
-    const recentlyLoggedInUsers = users.filter(
-      (user) => !!user.lastLoginAt
-    ).length;
+    const recentlyLoggedInUsers = users.filter((user) => !!user.lastLoginAt).length;
 
     const totalPurchases = purchases.length;
     const paidPurchases = purchases.filter(
@@ -432,7 +415,7 @@ exports.getAdminInternshipStats = async (req, res) => {
   }
 };
 
-// GET single internship
+// SINGLE
 exports.getSingleInternship = async (req, res) => {
   try {
     const internship = await Internship.findById(req.params.id)
@@ -459,7 +442,7 @@ exports.getSingleInternship = async (req, res) => {
   }
 };
 
-// CREATE internship
+// CREATE
 exports.createInternship = async (req, res) => {
   try {
     const payload = sanitizeInternshipPayload(req.body);
@@ -521,7 +504,7 @@ exports.createInternship = async (req, res) => {
   }
 };
 
-// UPDATE internship
+// UPDATE
 exports.updateInternship = async (req, res) => {
   try {
     const internship = await Internship.findById(req.params.id);
@@ -595,7 +578,7 @@ exports.updateInternship = async (req, res) => {
   }
 };
 
-// DELETE internship
+// DELETE
 exports.deleteInternship = async (req, res) => {
   try {
     const internship = await Internship.findById(req.params.id).select("_id");

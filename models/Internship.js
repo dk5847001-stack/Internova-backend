@@ -168,7 +168,7 @@ const internshipSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Important indexes for fast sorting/filtering
+// Important indexes
 internshipSchema.index({ createdAt: -1 });
 internshipSchema.index({ isActive: 1, createdAt: -1 });
 internshipSchema.index({ category: 1, createdAt: -1 });

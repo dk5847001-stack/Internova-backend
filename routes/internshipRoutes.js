@@ -23,7 +23,7 @@ router.post("/", protect, adminOnly, createInternship);
 router.put("/:id", protect, adminOnly, updateInternship);
 router.delete("/:id", protect, adminOnly, deleteInternship);
 
-// Keep this dynamic route at the end
+// Keep dynamic route at the end
 router.get("/:id", getSingleInternship);
 
 module.exports = router;
