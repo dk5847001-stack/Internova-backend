@@ -4,6 +4,7 @@ const Internship = require("../models/Internship");
 const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
+const { isValidObjectId } = require("../utils/validation");
 
 const formatDate = (date) =>
   new Date(date).toLocaleDateString("en-IN", {
@@ -153,10 +154,17 @@ exports.downloadOfferLetter = async (req, res) => {
   try {
     const { purchaseId } = req.params;
 
+    if (!isValidObjectId(purchaseId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase ID",
+      });
+    }
+
     const purchase = await Purchase.findOne({
       _id: purchaseId,
       userId: req.user.id,
-      paymentStatus: "paid",
+      paymentStatus: { $in: ["paid", "captured"] },
       $or: [
         { purchaseType: "internship" },
         { purchaseType: { $exists: false } },

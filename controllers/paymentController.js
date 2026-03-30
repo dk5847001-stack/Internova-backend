@@ -5,6 +5,7 @@ const Internship = require("../models/Internship");
 const Progress = require("../models/Progress");
 const User = require("../models/User");
 const generatePaymentSlipPdf = require("../utils/generatePaymentSlipPdf");
+const { isValidObjectId } = require("../utils/validation");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -16,10 +17,15 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const PAID_STATUSES = ["paid", "captured"];
+
+const ensurePaymentConfig = () =>
+  Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+
 const internshipPurchaseQuery = (userId, internshipId) => ({
   userId,
   internshipId,
-  paymentStatus: "paid",
+  paymentStatus: { $in: PAID_STATUSES },
   $or: [{ purchaseType: "internship" }, { purchaseType: { $exists: false } }],
 });
 
@@ -70,6 +76,20 @@ exports.createOrder = async (req, res) => {
       });
     }
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
+    if (!ensurePaymentConfig()) {
+      return res.status(503).json({
+        success: false,
+        message: "Payment service is temporarily unavailable",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
 
     if (!internship) {
@@ -101,7 +121,7 @@ exports.createOrder = async (req, res) => {
         userId,
         internshipId,
         purchaseType: "unlock_all",
-        paymentStatus: "paid",
+        paymentStatus: { $in: PAID_STATUSES },
       });
 
       if (existingPaidUnlockAll) {
@@ -217,7 +237,7 @@ exports.createOrder = async (req, res) => {
       userId,
       internshipId,
       durationLabel: selectedDuration.label,
-      paymentStatus: "paid",
+      paymentStatus: { $in: PAID_STATUSES },
       $or: [{ purchaseType: "internship" }, { purchaseType: { $exists: false } }],
     });
 
@@ -285,11 +305,19 @@ exports.verifyPayment = async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
     } = req.body;
+    const userId = req.user.id || req.user._id;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({
         success: false,
         message: "Missing payment verification fields",
+      });
+    }
+
+    if (!ensurePaymentConfig()) {
+      return res.status(503).json({
+        success: false,
+        message: "Payment service is temporarily unavailable",
       });
     }
 
@@ -305,9 +333,10 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      razorpayOrderId: razorpay_order_id,
-    }).populate("internshipId", "_id title");
+      const purchase = await Purchase.findOne({
+        razorpayOrderId: razorpay_order_id,
+        userId,
+      }).populate("internshipId", "_id title");
 
     if (!purchase) {
       return res.status(404).json({
@@ -316,8 +345,8 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    if (purchase.paymentStatus === "paid") {
-      const formattedPurchase = buildPurchaseResponse(purchase);
+      if (PAID_STATUSES.includes(String(purchase.paymentStatus).toLowerCase())) {
+        const formattedPurchase = buildPurchaseResponse(purchase);
 
       return res.status(200).json({
         success: true,
@@ -330,9 +359,21 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    purchase.razorpayPaymentId = razorpay_payment_id;
-    purchase.razorpaySignature = razorpay_signature;
-    purchase.paymentStatus = "paid";
+      const duplicatePayment = await Purchase.findOne({
+        razorpayPaymentId: razorpay_payment_id,
+        _id: { $ne: purchase._id },
+      }).select("_id");
+
+      if (duplicatePayment) {
+        return res.status(409).json({
+          success: false,
+          message: "This payment has already been linked to another purchase",
+        });
+      }
+
+      purchase.razorpayPaymentId = razorpay_payment_id;
+      purchase.razorpaySignature = razorpay_signature;
+      purchase.paymentStatus = "paid";
     await purchase.save();
 
     if (purchase.purchaseType === "unlock_all") {
@@ -372,10 +413,17 @@ exports.downloadPaymentSlip = async (req, res) => {
     const { purchaseId } = req.params;
     const userId = req.user.id || req.user._id;
 
+    if (!isValidObjectId(purchaseId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase ID",
+      });
+    }
+
     const purchase = await Purchase.findOne({
       _id: purchaseId,
       userId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: PAID_STATUSES },
     }).populate("internshipId");
 
     if (!purchase) {

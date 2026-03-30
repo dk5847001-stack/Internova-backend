@@ -5,18 +5,24 @@ const crypto = require("crypto");
 const admin = require("../config/firebaseAdmin");
 const sendEmail = require("../utils/sendEmail");
 const { generateOtp, getOtpExpiryTime } = require("../utils/authOtp");
+const {
+  PASSWORD_POLICY_MESSAGE,
+  escapeHtml,
+  isStrongPassword,
+  isValidEmail,
+  normalizeEmail,
+  normalizeName,
+  normalizePhone,
+} = require("../utils/validation");
 
-const normalizeEmail = (email = "") => {
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
+const GENERIC_OTP_RESEND_RESPONSE = {
+  success: true,
+  message: "If the account is pending verification, a new OTP has been sent.",
 };
 
-const normalizeName = (name = "") => {
-  return typeof name === "string" ? name.trim() : "";
-};
-
-const normalizePhone = (phone = "") => {
-  if (typeof phone !== "string") return "";
-  return phone.replace(/\s+/g, "").trim();
+const GENERIC_PASSWORD_RESET_RESPONSE = {
+  success: true,
+  message: "If an account exists with this email, a reset link will be sent.",
 };
 
 const getUnreadNotificationsCount = (user) => {
@@ -74,6 +80,7 @@ const createResetTokenHash = (token) => {
 
 const sendVerificationOtpEmail = async ({ email, name, otp }) => {
   const subject = "Internova Email Verification OTP";
+  const safeName = escapeHtml(name || "User");
 
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
@@ -84,7 +91,7 @@ const sendVerificationOtpEmail = async ({ email, name, otp }) => {
         </div>
 
         <div style="padding: 28px;">
-          <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${name || "User"},</p>
+          <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${safeName},</p>
           <p style="font-size: 15px; color: #475569; line-height: 1.7;">
             Use the OTP below to verify your email address for your InternovaTech account.
           </p>
@@ -119,6 +126,7 @@ const sendVerificationOtpEmail = async ({ email, name, otp }) => {
 
 const sendResetPasswordEmail = async ({ email, name, resetUrl }) => {
   const subject = "Internova Password Reset";
+  const safeName = escapeHtml(name || "User");
 
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
@@ -129,7 +137,7 @@ const sendResetPasswordEmail = async ({ email, name, resetUrl }) => {
         </div>
 
         <div style="padding: 28px;">
-          <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${name || "User"},</p>
+          <p style="font-size: 16px; color: #0f172a; margin-top: 0;">Hello ${safeName},</p>
           <p style="font-size: 15px; color: #475569; line-height: 1.7;">
             We received a request to reset your Internova account password.
           </p>
@@ -186,10 +194,24 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    if (password.length < 6) {
+    if (!isValidEmail(email)) {
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 6 characters long",
+        message: "Please enter a valid email address",
+      });
+    }
+
+    if (name.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "Name must be at least 2 characters long",
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: PASSWORD_POLICY_MESSAGE,
       });
     }
 
@@ -245,7 +267,7 @@ exports.registerUser = async (req, res) => {
     console.error("REGISTER ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error during registration",
+      message: "Server error during registration",
     });
   }
 };
@@ -261,6 +283,13 @@ exports.verifyEmailOtp = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Email and OTP are required",
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address",
       });
     }
 
@@ -327,7 +356,7 @@ exports.verifyEmailOtp = async (req, res) => {
     console.error("VERIFY EMAIL OTP ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to verify email OTP",
+      message: "Failed to verify email OTP",
     });
   }
 };
@@ -344,22 +373,23 @@ exports.resendEmailOtp = async (req, res) => {
       });
     }
 
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address",
+      });
+    }
+
     const user = await User.findOne({ email }).select(
       "+emailOtp +emailOtpExpires"
     );
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(200).json(GENERIC_OTP_RESEND_RESPONSE);
     }
 
     if (user.isEmailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is already verified",
-      });
+      return res.status(200).json(GENERIC_OTP_RESEND_RESPONSE);
     }
 
     const otp = generateOtp();
@@ -375,14 +405,13 @@ exports.resendEmailOtp = async (req, res) => {
     });
 
     return res.status(200).json({
-      success: true,
-      message: "A new OTP has been sent to your email",
+      ...GENERIC_OTP_RESEND_RESPONSE,
     });
   } catch (error) {
     console.error("RESEND EMAIL OTP ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to resend OTP",
+      message: "Failed to resend OTP",
     });
   }
 };
@@ -399,24 +428,23 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    const genericResponse = {
-      success: true,
-      message: "If an account exists with this email, a reset link will be sent.",
-    };
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address",
+      });
+    }
 
     const user = await User.findOne({ email }).select(
       "+resetPasswordToken +resetPasswordExpires"
     );
 
     if (!user) {
-      return res.status(200).json(genericResponse);
+      return res.status(200).json(GENERIC_PASSWORD_RESET_RESPONSE);
     }
 
     if (user.authProvider === "google" && !user.password) {
-      return res.status(400).json({
-        success: false,
-        message: "This account uses Google login. Please continue with Google.",
-      });
+      return res.status(200).json(GENERIC_PASSWORD_RESET_RESPONSE);
     }
 
     const rawToken = crypto.randomBytes(32).toString("hex");
@@ -442,12 +470,12 @@ exports.forgotPassword = async (req, res) => {
       resetUrl,
     });
 
-    return res.status(200).json(genericResponse);
+    return res.status(200).json(GENERIC_PASSWORD_RESET_RESPONSE);
   } catch (error) {
     console.error("FORGOT PASSWORD ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to process forgot password request",
+      message: "Failed to process forgot password request",
     });
   }
 };
@@ -461,26 +489,40 @@ exports.resetPassword = async (req, res) => {
     const password =
       typeof req.body?.password === "string" ? req.body.password : "";
 
-    if (!email || !token || !password) {
+    if (!token || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email, token and new password are required",
+        message: "Token and new password are required",
       });
     }
 
-    if (password.length < 6) {
+    if (email && !isValidEmail(email)) {
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 6 characters long",
+        message: "Please enter a valid email address",
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: PASSWORD_POLICY_MESSAGE,
       });
     }
 
     const hashedToken = createResetTokenHash(token);
 
-    const user = await User.findOne({
-      email,
+    const resetQuery = {
       resetPasswordToken: hashedToken,
-    }).select("+resetPasswordToken +resetPasswordExpires");
+    };
+
+    if (email) {
+      resetQuery.email = email;
+    }
+
+    const user = await User.findOne(resetQuery).select(
+      "+resetPasswordToken +resetPasswordExpires"
+    );
 
     if (!user) {
       return res.status(400).json({
@@ -502,6 +544,8 @@ exports.resetPassword = async (req, res) => {
     user.password = await bcrypt.hash(password, 10);
     user.resetPasswordToken = "";
     user.resetPasswordExpires = null;
+    user.emailOtp = "";
+    user.emailOtpExpires = null;
     user.authProvider = "local";
     user.isEmailVerified = true;
     user.lastLoginAt = new Date();
@@ -516,7 +560,7 @@ exports.resetPassword = async (req, res) => {
     console.error("RESET PASSWORD ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to reset password",
+      message: "Failed to reset password",
     });
   }
 };
@@ -532,6 +576,13 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address",
       });
     }
 
@@ -603,7 +654,7 @@ exports.loginUser = async (req, res) => {
     console.error("LOGIN ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error during login",
+      message: "Server error during login",
     });
   }
 };
@@ -687,7 +738,7 @@ exports.googleLogin = async (req, res) => {
     console.error("GOOGLE LOGIN ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Google login failed",
+      message: "Google login failed",
     });
   }
 };

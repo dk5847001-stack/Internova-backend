@@ -2,6 +2,7 @@ const Internship = require("../models/Internship");
 const Progress = require("../models/Progress");
 const Purchase = require("../models/Purchase");
 const TestResult = require("../models/TestResult");
+const { isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -320,6 +321,13 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -409,6 +417,17 @@ exports.updateVideoProgress = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "moduleId, videoId and watchedPercent are required",
+      });
+    }
+
+    if (
+      !isValidObjectId(internshipId) ||
+      !isValidObjectId(moduleId) ||
+      !isValidObjectId(videoId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship, module, or video ID",
       });
     }
 
@@ -520,6 +539,13 @@ exports.unlockAllModules = async (req, res) => {
       });
     }
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -589,6 +615,13 @@ exports.getEligibilityStatus = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
+      });
+    }
+
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
       });
     }
 

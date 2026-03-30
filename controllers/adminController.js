@@ -6,6 +6,7 @@ const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
 const ContactMessage = require("../models/ContactMessage");
 const Subscriber = require("../models/Subscriber");
+const { escapeRegex, isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -34,11 +35,12 @@ const buildUserSearchQuery = ({
 }) => {
   const query = {};
 
-  const trimmedSearch = String(search || "").trim();
+  const trimmedSearch = String(search || "").trim().slice(0, 80);
   if (trimmedSearch) {
+    const safeSearch = escapeRegex(trimmedSearch);
     query.$or = [
-      { name: { $regex: trimmedSearch, $options: "i" } },
-      { email: { $regex: trimmedSearch, $options: "i" } },
+      { name: { $regex: safeSearch, $options: "i" } },
+      { email: { $regex: safeSearch, $options: "i" } },
     ];
   }
 
@@ -421,7 +423,7 @@ exports.getAdminPurchases = async (req, res) => {
     const limit = Math.max(1, Math.min(100, toNumber(req.query.limit, 10)));
     const skip = (page - 1) * limit;
 
-    const search = String(req.query.search || "").trim();
+    const search = String(req.query.search || "").trim().slice(0, 80);
     const paymentStatus = String(req.query.paymentStatus || "All");
     const certificateStatus = String(req.query.certificateStatus || "All");
     const from = String(req.query.from || "");
@@ -496,6 +498,13 @@ exports.updateUserStatus = async (req, res) => {
     const { userId } = req.params;
     const { isActive } = req.body;
 
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
     if (typeof isActive !== "boolean") {
       return res.status(400).json({
         success: false,
@@ -544,6 +553,13 @@ exports.updatePurchaseStatus = async (req, res) => {
   try {
     const { purchaseId } = req.params;
     const { paymentStatus } = req.body;
+
+    if (!isValidObjectId(purchaseId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase ID",
+      });
+    }
 
     const allowedStatuses = ["created", "paid", "failed"];
 
@@ -607,6 +623,13 @@ exports.updatePurchaseStatus = async (req, res) => {
 exports.resendCertificateFromPurchase = async (req, res) => {
   try {
     const { purchaseId } = req.params;
+
+    if (!isValidObjectId(purchaseId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase ID",
+      });
+    }
 
     const purchase = await Purchase.findById(purchaseId)
       .populate("userId", "name email")
@@ -687,7 +710,7 @@ exports.getAdminContactMessages = async (req, res) => {
     const limit = Math.max(1, Math.min(100, toNumber(req.query.limit, 10)));
     const skip = (page - 1) * limit;
 
-    const search = String(req.query.search || "").trim();
+    const search = String(req.query.search || "").trim().slice(0, 80);
     const status = String(req.query.status || "All");
     const from = String(req.query.from || "");
     const to = String(req.query.to || "");
@@ -704,12 +727,13 @@ exports.getAdminContactMessages = async (req, res) => {
     }
 
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { subject: { $regex: search, $options: "i" } },
-        { message: { $regex: search, $options: "i" } },
-        { "adminReply.message": { $regex: search, $options: "i" } },
+        { name: { $regex: safeSearch, $options: "i" } },
+        { email: { $regex: safeSearch, $options: "i" } },
+        { subject: { $regex: safeSearch, $options: "i" } },
+        { message: { $regex: safeSearch, $options: "i" } },
+        { "adminReply.message": { $regex: safeSearch, $options: "i" } },
       ];
     }
 
@@ -746,6 +770,13 @@ exports.replyToContactMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
     const replyMessage = String(req.body?.replyMessage || "").trim();
+
+    if (!isValidObjectId(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message ID",
+      });
+    }
 
     if (!replyMessage) {
       return res.status(400).json({
@@ -818,12 +849,12 @@ exports.getAdminSubscribers = async (req, res) => {
     const page = Math.max(1, toNumber(req.query.page, 1));
     const limit = Math.max(1, Math.min(100, toNumber(req.query.limit, 10)));
     const skip = (page - 1) * limit;
-    const search = String(req.query.search || "").trim();
+    const search = String(req.query.search || "").trim().slice(0, 80);
 
     const query = {};
 
     if (search) {
-      query.email = { $regex: search, $options: "i" };
+      query.email = { $regex: escapeRegex(search), $options: "i" };
     }
 
     const [items, total] = await Promise.all([

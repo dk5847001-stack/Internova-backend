@@ -1,16 +1,9 @@
 const Subscriber = require("../models/Subscriber");
-
-const normalizeEmail = (email = "") => {
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
-};
+const { escapeRegex, isValidEmail, normalizeEmail } = require("../utils/validation");
 
 const normalizeSource = (source = "") => {
   const cleaned = typeof source === "string" ? source.trim().toLowerCase() : "";
   return cleaned || "footer";
-};
-
-const isValidEmail = (email = "") => {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
 
 /* =========================
@@ -47,11 +40,10 @@ exports.subscribeUser = async (req, res) => {
       return res.status(200).json({
         success: true,
         message: "Email already subscribed",
-        item: existing,
       });
     }
 
-    const item = await Subscriber.create({
+    await Subscriber.create({
       email,
       source,
       isActive: true,
@@ -60,7 +52,6 @@ exports.subscribeUser = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Subscribed successfully",
-      item,
     });
   } catch (error) {
     console.error("SUBSCRIBE USER ERROR:", error);
@@ -76,7 +67,17 @@ exports.subscribeUser = async (req, res) => {
 ========================= */
 exports.getAllSubscribers = async (req, res) => {
   try {
-    const items = await Subscriber.find()
+    const search = String(req.query?.search || "").trim();
+    const query = {};
+
+    if (search) {
+      query.email = {
+        $regex: escapeRegex(search.slice(0, 80)),
+        $options: "i",
+      };
+    }
+
+    const items = await Subscriber.find(query)
       .sort({ createdAt: -1 })
       .lean();
 

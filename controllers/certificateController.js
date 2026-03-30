@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
 
@@ -9,11 +10,14 @@ const Purchase = require("../models/Purchase");
 const Internship = require("../models/Internship");
 const User = require("../models/User");
 const TestResult = require("../models/TestResult");
+const { isValidObjectId, maskEmail } = require("../utils/validation");
 
 const generateCertificateId = () => {
-  const random = Math.floor(100000 + Math.random() * 900000);
+  const random = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `CERT-${Date.now()}-${random}`;
 };
+
+const PAID_STATUSES = ["paid", "captured"];
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -215,6 +219,13 @@ exports.checkCertificateEligibility = async (req, res) => {
     const { internshipId } = req.params;
     const userId = getUserId(req);
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(internshipId);
     if (!internship) {
       return res.status(404).json({
@@ -241,7 +252,7 @@ exports.checkCertificateEligibility = async (req, res) => {
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: PAID_STATUSES },
     });
 
     if (!purchase) {
@@ -298,10 +309,17 @@ exports.generateCertificate = async (req, res) => {
     const { internshipId } = req.params;
     const userId = getUserId(req);
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const purchase = await Purchase.findOne({
       userId,
       internshipId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: PAID_STATUSES },
     });
 
     if (!purchase) {
@@ -826,7 +844,7 @@ exports.verifyCertificate = async (req, res) => {
         certificateId: certificate.certificateId,
         issuedAt: certificate.issuedAt,
         candidateName: user?.name || "Candidate",
-        candidateEmail: user?.email || "",
+        candidateEmail: maskEmail(user?.email || ""),
         internshipTitle: internship?.title || "Internship Programs",
         branch: internship?.branch || "",
         category: internship?.category || "",

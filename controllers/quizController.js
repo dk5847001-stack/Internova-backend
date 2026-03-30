@@ -2,6 +2,7 @@ const Internship = require("../models/Internship");
 const Purchase = require("../models/Purchase");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
+const { isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -171,10 +172,17 @@ exports.getQuiz = async (req, res) => {
     const { internshipId } = req.params;
     const userId = getUserId(req);
 
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const paidPurchase = await Purchase.findOne({
       userId,
       internshipId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: ["paid", "captured"] },
     });
 
     if (!paidPurchase) {
@@ -265,16 +273,17 @@ exports.submitQuiz = async (req, res) => {
     const { answers } = req.body;
     const userId = getUserId(req);
 
-    console.log("QUIZ SUBMIT START:", {
-      internshipId,
-      userId: String(userId),
-      answers,
-    });
+    if (!isValidObjectId(internshipId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
 
     const paidPurchase = await Purchase.findOne({
       userId,
       internshipId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: ["paid", "captured"] },
     });
 
     if (!paidPurchase) {
@@ -422,15 +431,6 @@ exports.submitQuiz = async (req, res) => {
     applyDerivedProgressFields(internship, progress);
     await progress.save();
 
-    console.log("QUIZ SUBMIT SUCCESS:", {
-      internshipId,
-      userId: String(userId),
-      score,
-      percentage,
-      passed,
-      attemptNumber: result?.attemptNumber,
-    });
-
     return res.status(200).json({
       success: true,
       message: passed
@@ -441,8 +441,6 @@ exports.submitQuiz = async (req, res) => {
     });
   } catch (error) {
     console.error("SUBMIT QUIZ ERROR FULL:", error);
-    console.error("SUBMIT QUIZ ERROR MESSAGE:", error?.message);
-    console.error("SUBMIT QUIZ ERROR STACK:", error?.stack);
 
     if (error?.code === 11000) {
       return res.status(409).json({

@@ -5,6 +5,7 @@ const Certificate = require("../models/Certificate");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
 const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
+const { isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -18,7 +19,29 @@ const toTrimmedString = (value) => {
 const normalizeVideoUrl = (url = "") => {
   const trimmedUrl = toTrimmedString(url);
   if (!trimmedUrl) return "";
-  return convertGoogleDriveToPreviewUrl(trimmedUrl);
+
+  const convertedUrl = convertGoogleDriveToPreviewUrl(trimmedUrl);
+
+  if (/^https?:\/\//i.test(convertedUrl)) {
+    return convertedUrl;
+  }
+
+  return "";
+};
+
+const normalizeImageUrl = (url = "") => {
+  const trimmedUrl = toTrimmedString(url);
+  if (!trimmedUrl) return "";
+
+  if (/^https?:\/\//i.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
+  return "";
 };
 
 const sanitizeDurations = (durations = []) => {
@@ -105,8 +128,8 @@ const sanitizeInternshipPayload = (body = {}) => {
     branch: toTrimmedString(body.branch),
     category: toTrimmedString(body.category),
     description: toTrimmedString(body.description),
-    thumbnail: toTrimmedString(body.thumbnail),
-    image: toTrimmedString(body.image),
+    thumbnail: normalizeImageUrl(body.thumbnail),
+    image: normalizeImageUrl(body.image),
     durations: cleanedDurations,
     modules: cleanedModules,
     quiz: cleanedQuiz,
@@ -418,6 +441,13 @@ exports.getAdminInternshipStats = async (req, res) => {
 // SINGLE
 exports.getSingleInternship = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(req.params.id)
       .select("-__v")
       .lean();
@@ -507,6 +537,13 @@ exports.createInternship = async (req, res) => {
 // UPDATE
 exports.updateInternship = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(req.params.id);
 
     if (!internship) {
@@ -581,6 +618,13 @@ exports.updateInternship = async (req, res) => {
 // DELETE
 exports.deleteInternship = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid internship ID",
+      });
+    }
+
     const internship = await Internship.findById(req.params.id).select("_id");
 
     if (!internship) {

@@ -1,13 +1,11 @@
 const ContactMessage = require("../models/ContactMessage");
 const User = require("../models/User");
-
-const normalizeText = (value = "") => {
-  return typeof value === "string" ? value.trim() : "";
-};
-
-const normalizeEmail = (email = "") => {
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
-};
+const {
+  isValidEmail,
+  isValidObjectId,
+  normalizeEmail,
+  normalizeText,
+} = require("../utils/validation");
 
 const pushNotificationToUser = async ({
   userId,
@@ -62,6 +60,13 @@ exports.createContactMessage = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address",
       });
     }
 
@@ -140,6 +145,13 @@ exports.replyToContactMessage = async (req, res) => {
     const { messageId } = req.params;
     const replyMessage = normalizeText(req.body?.message);
     const userEmail = normalizeEmail(req.user?.email || "");
+
+    if (!isValidObjectId(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message ID",
+      });
+    }
 
     if (!replyMessage) {
       return res.status(400).json({

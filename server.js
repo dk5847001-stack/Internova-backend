@@ -20,6 +20,7 @@ const contactRoutes = require("./routes/contactRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
 
 const app = express();
+app.disable("x-powered-by");
 
 /* =========================
    Database
@@ -59,8 +60,22 @@ if (
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    referrerPolicy: { policy: "no-referrer" },
+    hsts:
+      process.env.NODE_ENV === "production"
+        ? {
+            maxAge: 31536000,
+            includeSubDomains: true,
+            preload: true,
+          }
+        : false,
   })
 );
+
+app.use((req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 
 /* =========================
    CORS
@@ -81,8 +96,8 @@ app.use(
 /* =========================
    Body Parsers
 ========================= */
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 app.use(cookieParser());
 
 /* =========================
@@ -106,8 +121,7 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Backend is working fine",
-    allowedOrigins,
-    environment: process.env.NODE_ENV || "development",
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -149,7 +163,7 @@ app.use((req, res) => {
    Global Error Handler
 ========================= */
 app.use((err, req, res, next) => {
-  console.error("❌ Server Error:", err);
+  console.error("SERVER ERROR:", err);
 
   if (err.message && err.message.startsWith("CORS blocked")) {
     return res.status(403).json({
@@ -158,9 +172,13 @@ app.use((err, req, res, next) => {
     });
   }
 
-  return res.status(err.status || 500).json({
+  const statusCode = err.status || 500;
+  const safeMessage =
+    statusCode >= 500 ? "Internal server error" : err.message || "Request failed";
+
+  return res.status(statusCode).json({
     success: false,
-    message: err.message || "Internal server error",
+    message: safeMessage,
   });
 });
 
@@ -170,6 +188,6 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log("✅ Allowed origins:", allowedOrigins);
+  console.log(`Server running on port ${PORT}`);
+  console.log("Allowed origins:", allowedOrigins);
 });
