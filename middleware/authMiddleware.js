@@ -1,14 +1,20 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const attachUserFromToken = async (req) => {
-  let token = null;
+const AUTH_USER_FIELDS = "_id name email role isActive isEmailVerified";
 
+const getBearerToken = (req) => {
   const authHeader = req.headers.authorization || "";
 
-  if (authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1]?.trim();
+  if (!authHeader.startsWith("Bearer ")) {
+    return "";
   }
+
+  return authHeader.split(" ")[1]?.trim() || "";
+};
+
+const attachUserFromToken = async (req) => {
+  const token = getBearerToken(req);
 
   if (!token || !process.env.JWT_SECRET) {
     return null;
@@ -20,9 +26,7 @@ const attachUserFromToken = async (req) => {
 
     if (!userId) return null;
 
-    const user = await User.findById(userId).select(
-      "_id name email role isActive isEmailVerified"
-    );
+    const user = await User.findById(userId).select(AUTH_USER_FIELDS);
 
     if (!user || user.isActive === false) return null;
 
@@ -42,13 +46,7 @@ const attachUserFromToken = async (req) => {
 
 exports.protect = async (req, res, next) => {
   try {
-    let token = null;
-
-    const authHeader = req.headers.authorization || "";
-
-    if (authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1]?.trim();
-    }
+    const token = getBearerToken(req);
 
     if (!token) {
       return res.status(401).json({
@@ -75,9 +73,7 @@ exports.protect = async (req, res, next) => {
       });
     }
 
-    const user = await User.findById(userId).select(
-      "_id name email role isActive isEmailVerified"
-    );
+    const user = await User.findById(userId).select(AUTH_USER_FIELDS);
 
     if (!user) {
       return res.status(401).json({
