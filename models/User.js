@@ -61,9 +61,9 @@ const userSchema = new mongoose.Schema(
       validate: {
         validator: function (value) {
           if (this.authProvider === "google") return true;
-          return typeof value === "string" && value.length >= 6;
+          return typeof value === "string" && value.length >= 8;
         },
-        message: "Password must be at least 6 characters long",
+        message: "Password must be at least 8 characters long",
       },
     },
 
