@@ -15,7 +15,8 @@ const normalizeText = (value = "", { lowerCase = false, maxLength = 500 } = {}) 
 const normalizeEmail = (email = "") =>
   normalizeText(email, { lowerCase: true, maxLength: 254 });
 
-const normalizeName = (name = "") => normalizeText(name, { maxLength: 80 });
+const normalizeName = (name = "") =>
+  normalizeText(name, { maxLength: 80 }).replace(/\s+/g, " ");
 
 const normalizePhone = (phone = "") => {
   if (typeof phone !== "string") return "";
