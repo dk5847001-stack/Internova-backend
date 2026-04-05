@@ -44,14 +44,31 @@ const createRateLimiter = ({
     const currentEntry = rateLimitStore.get(key);
 
     if (!currentEntry || currentEntry.resetAt <= now) {
-      rateLimitStore.set(key, {
+      const nextEntry = {
         count: 1,
         resetAt: now + safeWindowMs,
-      });
+      };
+
+      rateLimitStore.set(key, nextEntry);
+      res.setHeader("X-RateLimit-Limit", String(safeMax));
+      res.setHeader("X-RateLimit-Remaining", String(Math.max(0, safeMax - 1)));
+      res.setHeader(
+        "X-RateLimit-Reset",
+        String(Math.ceil(nextEntry.resetAt / 1000))
+      );
       return next();
     }
 
     currentEntry.count += 1;
+    res.setHeader("X-RateLimit-Limit", String(safeMax));
+    res.setHeader(
+      "X-RateLimit-Remaining",
+      String(Math.max(0, safeMax - currentEntry.count))
+    );
+    res.setHeader(
+      "X-RateLimit-Reset",
+      String(Math.ceil(currentEntry.resetAt / 1000))
+    );
 
     if (currentEntry.count > safeMax) {
       const retryAfterSeconds = Math.max(
