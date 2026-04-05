@@ -18,14 +18,16 @@ const { protect } = require("../middleware/authMiddleware");
 const { createRateLimiter, getClientIp } = require("../middleware/rateLimit");
 const { normalizeEmail } = require("../utils/validation");
 
+const getTrimmedKey = (value, maxLength = 80) =>
+  typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+
 const emailOrIpKey = (req) => {
   const email = normalizeEmail(req.body?.email);
   return email || getClientIp(req);
 };
 
 const tokenOrIpKey = (req) => {
-  const token =
-    typeof req.body?.token === "string" ? req.body.token.trim().slice(0, 80) : "";
+  const token = getTrimmedKey(req.body?.token);
   return token || getClientIp(req);
 };
 
@@ -75,10 +77,7 @@ const googleLoginLimiter = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: 12,
   keyGenerator: (req) => {
-    const token =
-      typeof req.body?.idToken === "string"
-        ? req.body.idToken.trim().slice(0, 80)
-        : "";
+    const token = getTrimmedKey(req.body?.idToken);
     return token || getClientIp(req);
   },
   message: "Too many Google sign-in attempts. Please try again later.",
