@@ -43,16 +43,20 @@ const allowedOrigins = [
   "https://internovatech.in",
 ];
 
-if (process.env.CLIENT_URL && !allowedOrigins.includes(process.env.CLIENT_URL)) {
-  allowedOrigins.push(process.env.CLIENT_URL);
-}
+const addAllowedOrigins = (value = "") => {
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .forEach((origin) => {
+      if (!allowedOrigins.includes(origin)) {
+        allowedOrigins.push(origin);
+      }
+    });
+};
 
-if (
-  process.env.FRONTEND_URL &&
-  !allowedOrigins.includes(process.env.FRONTEND_URL)
-) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
-}
+addAllowedOrigins(process.env.CLIENT_URL);
+addAllowedOrigins(process.env.FRONTEND_URL);
 
 /* =========================
    Security Middlewares
