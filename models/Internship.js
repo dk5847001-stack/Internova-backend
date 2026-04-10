@@ -20,62 +20,6 @@ const durationSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const videoSchema = new mongoose.Schema(
-  {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    videoUrl: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    duration: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    order: {
-      type: Number,
-      default: 0,
-    },
-  },
-  { _id: true }
-);
-
-const moduleSchema = new mongoose.Schema(
-  {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-    unlockDay: {
-      type: Number,
-      default: 1,
-      min: 1,
-    },
-    order: {
-      type: Number,
-      default: 0,
-    },
-    videos: [videoSchema],
-  },
-  { _id: true }
-);
-
 const internshipSchema = new mongoose.Schema(
   {
     title: {
@@ -119,7 +63,6 @@ const internshipSchema = new mongoose.Schema(
     },
 
     durations: [durationSchema],
-    modules: [moduleSchema],
 
     requiredProgress: {
       type: Number,
@@ -156,10 +99,6 @@ const internshipSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    quiz: {
-      type: Array,
-      default: [],
-    },
     isActive: {
       type: Boolean,
       default: true,
@@ -168,7 +107,7 @@ const internshipSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Important indexes
+// Important indexes for listing and admin summary queries.
 internshipSchema.index({ createdAt: -1 });
 internshipSchema.index({ isActive: 1, createdAt: -1 });
 internshipSchema.index({ category: 1, createdAt: -1 });

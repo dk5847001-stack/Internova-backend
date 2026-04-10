@@ -83,6 +83,7 @@ purchaseSchema.index({
 });
 
 purchaseSchema.index({ createdAt: -1 });
+purchaseSchema.index({ userId: 1, createdAt: -1 });
 purchaseSchema.index({ internshipId: 1, createdAt: -1 });
 
 module.exports =

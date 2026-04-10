@@ -10,7 +10,21 @@ const Purchase = require("../models/Purchase");
 const Internship = require("../models/Internship");
 const User = require("../models/User");
 const TestResult = require("../models/TestResult");
+const { getInternshipContentByInternshipId } = require("../utils/internshipContent");
 const { isValidObjectId, maskEmail } = require("../utils/validation");
+
+const CERTIFICATE_SUMMARY_FIELDS = [
+  "_id",
+  "title",
+  "branch",
+  "category",
+  "duration",
+  "durationDays",
+  "durations",
+  "requiredProgress",
+  "miniTestUnlockProgress",
+  "certificateEnabled",
+].join(" ");
 
 const generateCertificateId = () => {
   const random = crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -214,7 +228,25 @@ const getVerifyBaseUrl = () => {
   );
 };
 
+const getInternshipCertificateData = async (internshipId) => {
+  const [internship, content] = await Promise.all([
+    Internship.findById(internshipId).select(CERTIFICATE_SUMMARY_FIELDS).lean(),
+    getInternshipContentByInternshipId(internshipId, "modules"),
+  ]);
+
+  if (!internship) {
+    return null;
+  }
+
+  return {
+    ...internship,
+    modules: Array.isArray(content?.modules) ? content.modules : [],
+  };
+};
+
 exports.checkCertificateEligibility = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -226,8 +258,23 @@ exports.checkCertificateEligibility = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(internshipId);
+    const queryStartedAt = Date.now();
+
+    const [internship, purchase] = await Promise.all([
+      getInternshipCertificateData(internshipId),
+      Purchase.findOne({
+        userId,
+        internshipId,
+        paymentStatus: { $in: PAID_STATUSES },
+      }),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+
     if (!internship) {
+      console.log(
+        `[PERF] GET /api/certificates/eligibility/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
@@ -249,13 +296,10 @@ exports.checkCertificateEligibility = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      paymentStatus: { $in: PAID_STATUSES },
-    });
-
     if (!purchase) {
+      console.log(
+        `[PERF] GET /api/certificates/eligibility/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
@@ -284,6 +328,10 @@ exports.checkCertificateEligibility = async (req, res) => {
       status: "issued",
     });
 
+    console.log(
+      `[PERF] GET /api/certificates/eligibility/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms eligible=${Boolean(progress.certificateEligible)}`
+    );
+
     return res.status(200).json({
       success: true,
       eligible: Boolean(progress.certificateEligible),
@@ -297,6 +345,9 @@ exports.checkCertificateEligibility = async (req, res) => {
     });
   } catch (error) {
     console.error("CHECK CERTIFICATE ELIGIBILITY ERROR:", error);
+    console.log(
+      `[PERF] GET /api/certificates/eligibility/:internshipId failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to check certificate eligibility",
@@ -305,6 +356,8 @@ exports.checkCertificateEligibility = async (req, res) => {
 };
 
 exports.generateCertificate = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -316,21 +369,33 @@ exports.generateCertificate = async (req, res) => {
       });
     }
 
-    const purchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      paymentStatus: { $in: PAID_STATUSES },
-    });
+    const queryStartedAt = Date.now();
+
+    const [purchase, internship] = await Promise.all([
+      Purchase.findOne({
+        userId,
+        internshipId,
+        paymentStatus: { $in: PAID_STATUSES },
+      }),
+      getInternshipCertificateData(internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
 
     if (!purchase) {
+      console.log(
+        `[PERF] POST /api/certificates/generate/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
       });
     }
 
-    const internship = await Internship.findById(internshipId);
     if (!internship) {
+      console.log(
+        `[PERF] POST /api/certificates/generate/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
@@ -391,6 +456,10 @@ exports.generateCertificate = async (req, res) => {
       await certificate.save();
     }
 
+    console.log(
+      `[PERF] POST /api/certificates/generate/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms issued=1`
+    );
+
     return res.status(200).json({
       success: true,
       message: "Certificate ready",
@@ -398,6 +467,9 @@ exports.generateCertificate = async (req, res) => {
     });
   } catch (error) {
     console.error("GENERATE CERTIFICATE ERROR:", error);
+    console.log(
+      `[PERF] POST /api/certificates/generate/:internshipId failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to generate certificate",

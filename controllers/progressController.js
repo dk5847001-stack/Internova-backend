@@ -2,7 +2,23 @@ const Internship = require("../models/Internship");
 const Progress = require("../models/Progress");
 const Purchase = require("../models/Purchase");
 const TestResult = require("../models/TestResult");
+const { getInternshipContentByInternshipId } = require("../utils/internshipContent");
 const { isValidObjectId } = require("../utils/validation");
+
+const COURSE_SUMMARY_FIELDS = [
+  "_id",
+  "title",
+  "category",
+  "branch",
+  "duration",
+  "durationDays",
+  "durations",
+  "requiredProgress",
+  "miniTestUnlockProgress",
+  "miniTestPassMarks",
+  "unlockAllPrice",
+  "certificateEnabled",
+].join(" ");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -18,14 +34,6 @@ const sortByOrder = (items = []) => {
 };
 
 const getUserId = (req) => req.user?.id || req.user?._id;
-
-const normalizePaymentStatus = (status = "") =>
-  String(status || "").toLowerCase().trim();
-
-const isPaidStatus = (status = "") => {
-  const normalized = normalizePaymentStatus(status);
-  return normalized === "paid" || normalized === "captured";
-};
 
 const calculateCompletedDays = (enrolledAt, selectedDurationDays) => {
   const safeDurationDays = Math.max(0, toNumber(selectedDurationDays, 0));
@@ -102,7 +110,7 @@ const getUnlockedModules = (internship, progressDoc) => {
     progressDoc.selectedDurationDays
   );
 
-  return sortByOrder(internship.modules).map((module, moduleIndex) => {
+  return sortByOrder(safeArray(internship.modules)).map((module, moduleIndex) => {
     const plainModule = toPlainModule(module);
     const sortedVideos = sortByOrder(plainModule.videos);
 
@@ -120,7 +128,7 @@ const getUnlockedModules = (internship, progressDoc) => {
 };
 
 const calculateProgressStats = (internship, progressDoc) => {
-  const allModules = sortByOrder(internship.modules);
+  const allModules = sortByOrder(safeArray(internship.modules));
   const totalModules = allModules.length;
 
   let totalVideos = 0;
@@ -299,10 +307,28 @@ const getLatestPaidPurchase = async (userId, internshipId) => {
   });
 };
 
+const getInternshipCourseData = async (internshipId) => {
+  const [internship, content] = await Promise.all([
+    Internship.findById(internshipId).select(COURSE_SUMMARY_FIELDS).lean(),
+    getInternshipContentByInternshipId(internshipId, "modules"),
+  ]);
+
+  if (!internship) {
+    return null;
+  }
+
+  return {
+    ...internship,
+    modules: safeArray(content.modules),
+  };
+};
+
 // @desc   Get full course progress page data
 // @route  GET /api/progress/course/:internshipId
 // @access Private
 exports.getCourseProgress = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -328,17 +354,29 @@ exports.getCourseProgress = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(internshipId);
+    const queryStartedAt = Date.now();
+
+    const [internship, purchase] = await Promise.all([
+      getInternshipCourseData(internshipId),
+      getLatestPaidPurchase(userId, internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+
     if (!internship) {
+      console.log(
+        `[PERF] GET /api/progress/course/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
       });
     }
 
-    const purchase = await getLatestPaidPurchase(userId, internshipId);
-
     if (!purchase) {
+      console.log(
+        `[PERF] GET /api/progress/course/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
@@ -356,6 +394,11 @@ exports.getCourseProgress = async (req, res) => {
     await progress.save();
 
     const unlockedModules = getUnlockedModules(internship, progress);
+    const totalRequestMs = Date.now() - requestStartedAt;
+
+    console.log(
+      `[PERF] GET /api/progress/course/:internshipId db=${queryDurationMs}ms total=${totalRequestMs}ms modules=${unlockedModules.length}`
+    );
 
     return res.status(200).json({
       success: true,
@@ -390,6 +433,9 @@ exports.getCourseProgress = async (req, res) => {
     });
   } catch (error) {
     console.error("getCourseProgress error:", error);
+    console.log(
+      `[PERF] GET /api/progress/course/:internshipId failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to load course progress",
@@ -401,6 +447,8 @@ exports.getCourseProgress = async (req, res) => {
 // @route  PATCH /api/progress/course/:internshipId/video
 // @access Private
 exports.updateVideoProgress = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const { moduleId, videoId, watchedPercent } = req.body;
@@ -431,17 +479,29 @@ exports.updateVideoProgress = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(internshipId);
+    const queryStartedAt = Date.now();
+
+    const [internship, purchase] = await Promise.all([
+      getInternshipCourseData(internshipId),
+      getLatestPaidPurchase(userId, internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+
     if (!internship) {
+      console.log(
+        `[PERF] PATCH /api/progress/course/:internshipId/video db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
       });
     }
 
-    const purchase = await getLatestPaidPurchase(userId, internshipId);
-
     if (!purchase) {
+      console.log(
+        `[PERF] PATCH /api/progress/course/:internshipId/video db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
@@ -510,6 +570,10 @@ exports.updateVideoProgress = async (req, res) => {
     await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
+    console.log(
+      `[PERF] PATCH /api/progress/course/:internshipId/video db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms progress=1`
+    );
+
     return res.status(200).json({
       success: true,
       message: "Video progress updated successfully",
@@ -517,6 +581,9 @@ exports.updateVideoProgress = async (req, res) => {
     });
   } catch (error) {
     console.error("updateVideoProgress error:", error);
+    console.log(
+      `[PERF] PATCH /api/progress/course/:internshipId/video failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to update video progress",
@@ -528,6 +595,8 @@ exports.updateVideoProgress = async (req, res) => {
 // @route  PATCH /api/progress/course/:internshipId/unlock-all
 // @access Private
 exports.unlockAllModules = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -546,29 +615,40 @@ exports.unlockAllModules = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(internshipId);
+    const queryStartedAt = Date.now();
+
+    const [internship, purchase, paidUnlockAllPurchase] = await Promise.all([
+      getInternshipCourseData(internshipId),
+      getLatestPaidPurchase(userId, internshipId),
+      Purchase.findOne({
+        userId,
+        internshipId,
+        purchaseType: "unlock_all",
+        paymentStatus: { $in: ["paid", "captured"] },
+      }),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+
     if (!internship) {
+      console.log(
+        `[PERF] PATCH /api/progress/course/:internshipId/unlock-all db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
       });
     }
 
-    const purchase = await getLatestPaidPurchase(userId, internshipId);
-
     if (!purchase) {
+      console.log(
+        `[PERF] PATCH /api/progress/course/:internshipId/unlock-all db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
       });
     }
-
-    const paidUnlockAllPurchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      purchaseType: "unlock_all",
-      paymentStatus: { $in: ["paid", "captured"] },
-    });
 
     if (!paidUnlockAllPurchase) {
       return res.status(403).json({
@@ -589,6 +669,10 @@ exports.unlockAllModules = async (req, res) => {
     await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
+    console.log(
+      `[PERF] PATCH /api/progress/course/:internshipId/unlock-all db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms unlock=1`
+    );
+
     return res.status(200).json({
       success: true,
       message: "All modules unlocked successfully",
@@ -596,6 +680,9 @@ exports.unlockAllModules = async (req, res) => {
     });
   } catch (error) {
     console.error("unlockAllModules error:", error);
+    console.log(
+      `[PERF] PATCH /api/progress/course/:internshipId/unlock-all failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to unlock all modules",
@@ -607,6 +694,8 @@ exports.unlockAllModules = async (req, res) => {
 // @route  GET /api/progress/course/:internshipId/eligibility
 // @access Private
 exports.getEligibilityStatus = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -625,17 +714,29 @@ exports.getEligibilityStatus = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(internshipId);
+    const queryStartedAt = Date.now();
+
+    const [internship, purchase] = await Promise.all([
+      getInternshipCourseData(internshipId),
+      getLatestPaidPurchase(userId, internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+
     if (!internship) {
+      console.log(
+        `[PERF] GET /api/progress/course/:internshipId/eligibility db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
       });
     }
 
-    const purchase = await getLatestPaidPurchase(userId, internshipId);
-
     if (!purchase) {
+      console.log(
+        `[PERF] GET /api/progress/course/:internshipId/eligibility db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
@@ -652,6 +753,10 @@ exports.getEligibilityStatus = async (req, res) => {
     await applyDerivedProgressFields(internship, progress, userId, internshipId);
     await progress.save();
 
+    console.log(
+      `[PERF] GET /api/progress/course/:internshipId/eligibility db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms progress=1`
+    );
+
     return res.status(200).json({
       success: true,
       eligibility: {
@@ -665,6 +770,9 @@ exports.getEligibilityStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("getEligibilityStatus error:", error);
+    console.log(
+      `[PERF] GET /api/progress/course/:internshipId/eligibility failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to fetch eligibility status",

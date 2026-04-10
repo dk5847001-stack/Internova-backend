@@ -1,10 +1,18 @@
 const Internship = require("../models/Internship");
+const InternshipContent = require("../models/InternshipContent");
 const User = require("../models/User");
 const Purchase = require("../models/Purchase");
 const Certificate = require("../models/Certificate");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
 const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
+const {
+  getInternshipContentByInternshipId,
+  getInternshipContentMap,
+  getInternshipContentSummaryMap,
+  mergeInternshipWithContent,
+  toIdString,
+} = require("../utils/internshipContent");
 const { isValidObjectId } = require("../utils/validation");
 
 const INTERNSHIP_LIST_FIELDS = [
@@ -20,6 +28,9 @@ const INTERNSHIP_LIST_FIELDS = [
   "isActive",
   "createdAt",
 ].join(" ");
+
+const INTERNSHIP_DETAIL_FIELDS = "-__v";
+const INTERNSHIP_ADMIN_FIELDS = "-__v";
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -98,7 +109,9 @@ const sanitizeModules = (modules = []) => {
             .filter((video) => video.videoUrl)
         : [],
     }))
-    .filter((module) => Array.isArray(module.videos) && module.videos.length > 0);
+    .filter(
+      (module) => Array.isArray(module.videos) && module.videos.length > 0
+    );
 };
 
 const sanitizeQuiz = (quiz = []) => {
@@ -115,7 +128,10 @@ const sanitizeQuiz = (quiz = []) => {
     .map((question) => ({
       question: toTrimmedString(question.question),
       options: question.options.map((option) => toTrimmedString(option)),
-      correctAnswer: Math.min(3, Math.max(0, toNumber(question.correctAnswer, 0))),
+      correctAnswer: Math.min(
+        3,
+        Math.max(0, toNumber(question.correctAnswer, 0))
+      ),
     }));
 };
 
@@ -147,15 +163,23 @@ const sanitizeInternshipPayload = (body = {}) => {
     durations: cleanedDurations,
     modules: cleanedModules,
     quiz: cleanedQuiz,
-    requiredProgress: Math.min(100, Math.max(1, toNumber(body.requiredProgress, 80))),
+    requiredProgress: Math.min(
+      100,
+      Math.max(1, toNumber(body.requiredProgress, 80))
+    ),
     miniTestUnlockProgress: Math.min(
       100,
       Math.max(1, toNumber(body.miniTestUnlockProgress, 80))
     ),
-    miniTestPassMarks: Math.min(100, Math.max(1, toNumber(body.miniTestPassMarks, 60))),
+    miniTestPassMarks: Math.min(
+      100,
+      Math.max(1, toNumber(body.miniTestPassMarks, 60))
+    ),
     unlockAllPrice: Math.max(0, toNumber(body.unlockAllPrice, 99)),
     certificateEnabled:
-      typeof body.certificateEnabled === "boolean" ? body.certificateEnabled : true,
+      typeof body.certificateEnabled === "boolean"
+        ? body.certificateEnabled
+        : true,
     isActive: typeof body.isActive === "boolean" ? body.isActive : true,
   };
 };
@@ -180,6 +204,45 @@ const validateInternshipPayload = (payload) => {
   return null;
 };
 
+const buildInternshipSummaryPayload = (payload) => {
+  const firstDuration = payload.durations[0] || {};
+
+  return {
+    title: payload.title,
+    slug: payload.slug,
+    branch: payload.branch,
+    category: payload.category,
+    description: payload.description,
+    thumbnail: payload.thumbnail,
+    image: payload.image,
+    duration: firstDuration.label || "",
+    durationDays: firstDuration.durationDays || 30,
+    price: firstDuration.price || 0,
+    durations: payload.durations,
+    requiredProgress: payload.requiredProgress,
+    miniTestUnlockProgress: payload.miniTestUnlockProgress,
+    miniTestPassMarks: payload.miniTestPassMarks,
+    unlockAllPrice: payload.unlockAllPrice,
+    certificateEnabled: payload.certificateEnabled,
+    isActive: payload.isActive,
+  };
+};
+
+const buildInternshipContentPayload = (payload) => ({
+  modules: payload.modules,
+  quiz: payload.quiz,
+});
+
+const getContentSummary = (summaryMap, internshipId) => {
+  return (
+    summaryMap.get(toIdString(internshipId)) || {
+      modulesCount: 0,
+      videosCount: 0,
+      quizCount: 0,
+    }
+  );
+};
+
 // PUBLIC LIST
 exports.getAllInternships = async (req, res) => {
   const requestStartedAt = Date.now();
@@ -187,7 +250,7 @@ exports.getAllInternships = async (req, res) => {
   try {
     const queryStartedAt = Date.now();
 
-    // Listing cards only need lightweight fields, not full course content.
+    // Listing cards only need lightweight summary fields.
     const internships = await Internship.find({ isActive: true })
       .select(INTERNSHIP_LIST_FIELDS)
       .sort({ createdAt: -1 })
@@ -221,14 +284,22 @@ exports.getAllInternships = async (req, res) => {
 exports.getAllInternshipsAdmin = async (req, res) => {
   try {
     const internships = await Internship.find({})
-      .select("-__v")
+      .select(INTERNSHIP_ADMIN_FIELDS)
       .sort({ _id: -1 })
       .lean();
 
+    const contentMap = await getInternshipContentMap(
+      internships.map((item) => item._id)
+    );
+
+    const mergedInternships = internships.map((item) =>
+      mergeInternshipWithContent(item, contentMap.get(toIdString(item._id)))
+    );
+
     return res.status(200).json({
       success: true,
-      count: internships.length,
-      internships,
+      count: mergedInternships.length,
+      internships: mergedInternships,
     });
   } catch (error) {
     console.error("GET ADMIN INTERNSHIPS ERROR:", error);
@@ -251,7 +322,7 @@ exports.getAdminInternshipStats = async (req, res) => {
       progresses,
     ] = await Promise.all([
       Internship.find({})
-        .select("title branch category isActive modules quiz createdAt updatedAt")
+        .select("title branch category isActive createdAt updatedAt")
         .sort({ _id: -1 })
         .lean(),
       User.find({})
@@ -276,29 +347,25 @@ exports.getAdminInternshipStats = async (req, res) => {
         .lean(),
     ]);
 
+    const contentSummaryMap = await getInternshipContentSummaryMap(
+      internships.map((item) => item._id)
+    );
+
     const totalPrograms = internships.length;
     const activePrograms = internships.filter((item) => item.isActive).length;
     const inactivePrograms = totalPrograms - activePrograms;
 
-    const totalModules = internships.reduce(
-      (sum, item) => sum + (item.modules?.length || 0),
-      0
-    );
+    const totalModules = internships.reduce((sum, item) => {
+      return sum + getContentSummary(contentSummaryMap, item._id).modulesCount;
+    }, 0);
 
-    const totalVideos = internships.reduce(
-      (sum, item) =>
-        sum +
-        (item.modules || []).reduce(
-          (moduleSum, module) => moduleSum + (module.videos?.length || 0),
-          0
-        ),
-      0
-    );
+    const totalVideos = internships.reduce((sum, item) => {
+      return sum + getContentSummary(contentSummaryMap, item._id).videosCount;
+    }, 0);
 
-    const totalQuizQuestions = internships.reduce(
-      (sum, item) => sum + (item.quiz?.length || 0),
-      0
-    );
+    const totalQuizQuestions = internships.reduce((sum, item) => {
+      return sum + getContentSummary(contentSummaryMap, item._id).quizCount;
+    }, 0);
 
     const totalUsers = users.length;
     const totalAdmins = users.filter((user) => user.role === "admin").length;
@@ -350,21 +417,22 @@ exports.getAdminInternshipStats = async (req, res) => {
       return acc;
     }, {});
 
-    const recentInternships = internships.slice(0, 6).map((item) => ({
-      _id: item._id,
-      title: item.title,
-      branch: item.branch,
-      category: item.category,
-      isActive: item.isActive,
-      modulesCount: item.modules?.length || 0,
-      videosCount: (item.modules || []).reduce(
-        (sum, module) => sum + (module.videos?.length || 0),
-        0
-      ),
-      quizCount: item.quiz?.length || 0,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    }));
+    const recentInternships = internships.slice(0, 6).map((item) => {
+      const contentSummary = getContentSummary(contentSummaryMap, item._id);
+
+      return {
+        _id: item._id,
+        title: item.title,
+        branch: item.branch,
+        category: item.category,
+        isActive: item.isActive,
+        modulesCount: contentSummary.modulesCount,
+        videosCount: contentSummary.videosCount,
+        quizCount: contentSummary.quizCount,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      };
+    });
 
     const recentUsers = users.slice(0, 8).map((user) => ({
       _id: user._id,
@@ -469,6 +537,8 @@ exports.getAdminInternshipStats = async (req, res) => {
 
 // SINGLE
 exports.getSingleInternship = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({
@@ -477,23 +547,42 @@ exports.getSingleInternship = async (req, res) => {
       });
     }
 
-    const internship = await Internship.findById(req.params.id)
-      .select("-__v")
-      .lean();
+    const queryStartedAt = Date.now();
+
+    // Details fetch summary + heavy content only when needed.
+    const [internship, content] = await Promise.all([
+      Internship.findById(req.params.id).select(INTERNSHIP_DETAIL_FIELDS).lean(),
+      getInternshipContentByInternshipId(req.params.id),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+    const totalRequestMs = Date.now() - requestStartedAt;
 
     if (!internship) {
+      console.log(
+        `[PERF] GET /api/internships/:id db=${queryDurationMs}ms total=${totalRequestMs}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
       });
     }
 
+    const mergedInternship = mergeInternshipWithContent(internship, content);
+
+    console.log(
+      `[PERF] GET /api/internships/:id db=${queryDurationMs}ms total=${totalRequestMs}ms found=1`
+    );
+
     return res.status(200).json({
       success: true,
-      internship,
+      internship: mergedInternship,
     });
   } catch (error) {
     console.error("GET SINGLE INTERNSHIP ERROR:", error);
+    console.log(
+      `[PERF] GET /api/internships/:id failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to fetch internship details",
@@ -525,34 +614,27 @@ exports.createInternship = async (req, res) => {
       });
     }
 
-    const firstDuration = payload.durations[0] || {};
+    const internship = await Internship.create(
+      buildInternshipSummaryPayload(payload)
+    );
 
-    const internship = await Internship.create({
-      title: payload.title,
-      slug: payload.slug,
-      branch: payload.branch,
-      category: payload.category,
-      description: payload.description,
-      thumbnail: payload.thumbnail,
-      image: payload.image,
-      duration: firstDuration.label || "",
-      durationDays: firstDuration.durationDays || 30,
-      price: firstDuration.price || 0,
-      durations: payload.durations,
-      modules: payload.modules,
-      quiz: payload.quiz,
-      requiredProgress: payload.requiredProgress,
-      miniTestUnlockProgress: payload.miniTestUnlockProgress,
-      miniTestPassMarks: payload.miniTestPassMarks,
-      unlockAllPrice: payload.unlockAllPrice,
-      certificateEnabled: payload.certificateEnabled,
-      isActive: payload.isActive,
-    });
+    try {
+      await InternshipContent.create({
+        internshipId: internship._id,
+        ...buildInternshipContentPayload(payload),
+      });
+    } catch (contentError) {
+      await Internship.findByIdAndDelete(internship._id);
+      throw contentError;
+    }
 
     return res.status(201).json({
       success: true,
       message: "Internship created successfully",
-      internship,
+      internship: mergeInternshipWithContent(
+        internship.toObject(),
+        buildInternshipContentPayload(payload)
+      ),
     });
   } catch (error) {
     console.error("CREATE INTERNSHIP ERROR:", error);
@@ -606,34 +688,29 @@ exports.updateInternship = async (req, res) => {
       });
     }
 
-    const firstDuration = payload.durations[0] || {};
-
-    internship.title = payload.title;
-    internship.slug = payload.slug;
-    internship.branch = payload.branch;
-    internship.category = payload.category;
-    internship.description = payload.description;
-    internship.thumbnail = payload.thumbnail;
-    internship.image = payload.image;
-    internship.duration = firstDuration.label || "";
-    internship.durationDays = firstDuration.durationDays || 30;
-    internship.price = firstDuration.price || 0;
-    internship.durations = payload.durations;
-    internship.modules = payload.modules;
-    internship.quiz = payload.quiz;
-    internship.requiredProgress = payload.requiredProgress;
-    internship.miniTestUnlockProgress = payload.miniTestUnlockProgress;
-    internship.miniTestPassMarks = payload.miniTestPassMarks;
-    internship.unlockAllPrice = payload.unlockAllPrice;
-    internship.certificateEnabled = payload.certificateEnabled;
-    internship.isActive = payload.isActive;
-
+    Object.assign(internship, buildInternshipSummaryPayload(payload));
     await internship.save();
+
+    await InternshipContent.findOneAndUpdate(
+      { internshipId: internship._id },
+      {
+        $set: buildInternshipContentPayload(payload),
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
 
     return res.status(200).json({
       success: true,
       message: "Internship updated successfully",
-      internship,
+      internship: mergeInternshipWithContent(
+        internship.toObject(),
+        buildInternshipContentPayload(payload)
+      ),
     });
   } catch (error) {
     console.error("UPDATE INTERNSHIP ERROR:", error);
@@ -663,7 +740,10 @@ exports.deleteInternship = async (req, res) => {
       });
     }
 
-    await Internship.findByIdAndDelete(req.params.id);
+    await Promise.all([
+      Internship.findByIdAndDelete(req.params.id),
+      InternshipContent.deleteOne({ internshipId: req.params.id }),
+    ]);
 
     return res.status(200).json({
       success: true,

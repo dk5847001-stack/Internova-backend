@@ -1,6 +1,5 @@
 const Purchase = require("../models/Purchase");
 const User = require("../models/User");
-const Internship = require("../models/Internship");
 const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
@@ -136,7 +135,8 @@ exports.getMyPurchases = async (req, res) => {
       return {
         _id: purchase._id,
         purchaseId: purchase._id,
-        internshipId: internship._id || null,
+        // Preserve the populated internship object shape while keeping it lightweight.
+        internshipId: internship && internship._id ? internship : null,
         paymentStatus:
           normalizedPaymentStatus === "paid"
             ? "paid"
@@ -211,7 +211,7 @@ exports.downloadOfferLetter = async (req, res) => {
         { purchaseType: "internship" },
         { purchaseType: { $exists: false } },
       ],
-    }).populate("internshipId");
+    }).populate("internshipId", PURCHASE_INTERNSHIP_FIELDS);
 
     if (!purchase) {
       return res.status(404).json({

@@ -2,7 +2,19 @@ const Internship = require("../models/Internship");
 const Purchase = require("../models/Purchase");
 const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
+const { getInternshipContentByInternshipId } = require("../utils/internshipContent");
 const { isValidObjectId } = require("../utils/validation");
+
+const QUIZ_SUMMARY_FIELDS = [
+  "_id",
+  "title",
+  "durations",
+  "durationDays",
+  "miniTestUnlockProgress",
+  "miniTestPassMarks",
+  "requiredProgress",
+  "certificateEnabled",
+].join(" ");
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -167,7 +179,26 @@ const ensureProgressDoc = async ({ internship, internshipId, purchase, userId })
   return progress;
 };
 
+const getInternshipQuizData = async (internshipId) => {
+  const [internship, content] = await Promise.all([
+    Internship.findById(internshipId).select(QUIZ_SUMMARY_FIELDS).lean(),
+    getInternshipContentByInternshipId(internshipId, "modules quiz"),
+  ]);
+
+  if (!internship) {
+    return null;
+  }
+
+  return {
+    ...internship,
+    modules: Array.isArray(content?.modules) ? content.modules : [],
+    quiz: Array.isArray(content?.quiz) ? content.quiz : [],
+  };
+};
+
 exports.getQuiz = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const userId = getUserId(req);
@@ -179,24 +210,33 @@ exports.getQuiz = async (req, res) => {
       });
     }
 
-    const paidPurchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      paymentStatus: { $in: ["paid", "captured"] },
-    });
+    const queryStartedAt = Date.now();
+
+    const [paidPurchase, internship] = await Promise.all([
+      Purchase.findOne({
+        userId,
+        internshipId,
+        paymentStatus: { $in: ["paid", "captured"] },
+      }),
+      getInternshipQuizData(internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
 
     if (!paidPurchase) {
+      console.log(
+        `[PERF] GET /api/quiz/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
       });
     }
 
-    const internship = await Internship.findById(internshipId).select(
-      "title quiz miniTestUnlockProgress miniTestPassMarks requiredProgress certificateEnabled modules durations durationDays"
-    );
-
     if (!internship) {
+      console.log(
+        `[PERF] GET /api/quiz/:internshipId db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
@@ -246,6 +286,11 @@ exports.getQuiz = async (req, res) => {
     });
 
     const locked = existingResult?.passed === true;
+    const totalRequestMs = Date.now() - requestStartedAt;
+
+    console.log(
+      `[PERF] GET /api/quiz/:internshipId db=${queryDurationMs}ms total=${totalRequestMs}ms questions=${safeQuiz.length}`
+    );
 
     return res.status(200).json({
       success: true,
@@ -260,6 +305,9 @@ exports.getQuiz = async (req, res) => {
     });
   } catch (error) {
     console.error("GET QUIZ ERROR:", error);
+    console.log(
+      `[PERF] GET /api/quiz/:internshipId failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to fetch quiz",
@@ -268,6 +316,8 @@ exports.getQuiz = async (req, res) => {
 };
 
 exports.submitQuiz = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
     const { internshipId } = req.params;
     const { answers } = req.body;
@@ -280,24 +330,33 @@ exports.submitQuiz = async (req, res) => {
       });
     }
 
-    const paidPurchase = await Purchase.findOne({
-      userId,
-      internshipId,
-      paymentStatus: { $in: ["paid", "captured"] },
-    });
+    const queryStartedAt = Date.now();
+
+    const [paidPurchase, internship] = await Promise.all([
+      Purchase.findOne({
+        userId,
+        internshipId,
+        paymentStatus: { $in: ["paid", "captured"] },
+      }),
+      getInternshipQuizData(internshipId),
+    ]);
+
+    const queryDurationMs = Date.now() - queryStartedAt;
 
     if (!paidPurchase) {
+      console.log(
+        `[PERF] POST /api/quiz/:internshipId/submit db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms purchase=0`
+      );
       return res.status(403).json({
         success: false,
         message: "You have not purchased this internship",
       });
     }
 
-    const internship = await Internship.findById(internshipId).select(
-      "quiz miniTestUnlockProgress miniTestPassMarks requiredProgress certificateEnabled modules durations durationDays"
-    );
-
     if (!internship) {
+      console.log(
+        `[PERF] POST /api/quiz/:internshipId/submit db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms found=0`
+      );
       return res.status(404).json({
         success: false,
         message: "Internship not found",
@@ -431,6 +490,10 @@ exports.submitQuiz = async (req, res) => {
     applyDerivedProgressFields(internship, progress);
     await progress.save();
 
+    console.log(
+      `[PERF] POST /api/quiz/:internshipId/submit db=${queryDurationMs}ms total=${Date.now() - requestStartedAt}ms questions=${totalQuestions}`
+    );
+
     return res.status(200).json({
       success: true,
       message: passed
@@ -441,6 +504,9 @@ exports.submitQuiz = async (req, res) => {
     });
   } catch (error) {
     console.error("SUBMIT QUIZ ERROR FULL:", error);
+    console.log(
+      `[PERF] POST /api/quiz/:internshipId/submit failed total=${Date.now() - requestStartedAt}ms`
+    );
 
     if (error?.code === 11000) {
       return res.status(409).json({

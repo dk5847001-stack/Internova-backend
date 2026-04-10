@@ -6,6 +6,7 @@ const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
 const ContactMessage = require("../models/ContactMessage");
 const Subscriber = require("../models/Subscriber");
+const { getInternshipContentSummaryMap } = require("../utils/internshipContent");
 const { escapeRegex, isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
@@ -200,7 +201,10 @@ exports.getAdminOverview = async (req, res) => {
       recentPurchasesRaw,
       recentMessages,
     ] = await Promise.all([
-      Internship.find().sort({ createdAt: -1 }),
+      Internship.find()
+        .select("title branch category isActive createdAt updatedAt")
+        .sort({ createdAt: -1 })
+        .lean(),
       User.countDocuments(),
       User.countDocuments({ role: "admin" }),
       User.countDocuments({ isActive: { $ne: false } }),
@@ -215,42 +219,50 @@ exports.getAdminOverview = async (req, res) => {
       User.find()
         .select("name email role createdAt lastLoginAt isActive notifications")
         .sort({ createdAt: -1 })
-        .limit(8),
-      Internship.find().sort({ createdAt: -1 }).limit(6),
+        .limit(8)
+        .lean(),
+      Internship.find()
+        .select("title branch category isActive createdAt updatedAt")
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean(),
       Purchase.find()
         .populate("userId", "name email role lastLoginAt isActive createdAt")
         .populate("internshipId", "title branch category")
         .sort({ createdAt: -1 })
-        .limit(10),
+        .limit(10)
+        .lean(),
       ContactMessage.find()
   .sort({ updatedAt: -1 })
   .limit(6)
   .select("name email subject message status createdAt updatedAt adminReply"),
     ]);
 
+    const contentSummaryMap = await getInternshipContentSummaryMap(
+      internships.map((item) => item._id)
+    );
+
     const totalPrograms = internships.length;
     const activePrograms = internships.filter((item) => item.isActive).length;
     const inactivePrograms = totalPrograms - activePrograms;
 
-    const totalModules = internships.reduce(
-      (sum, item) => sum + (item.modules?.length || 0),
-      0
-    );
-
-    const totalVideos = internships.reduce(
-      (sum, item) =>
+    const totalModules = internships.reduce((sum, item) => {
+      return (
         sum +
-        (item.modules || []).reduce(
-          (moduleSum, module) => moduleSum + (module.videos?.length || 0),
-          0
-        ),
-      0
-    );
+        (contentSummaryMap.get(String(item._id))?.modulesCount || 0)
+      );
+    }, 0);
 
-    const totalQuizQuestions = internships.reduce(
-      (sum, item) => sum + (item.quiz?.length || 0),
-      0
-    );
+    const totalVideos = internships.reduce((sum, item) => {
+      return (
+        sum +
+        (contentSummaryMap.get(String(item._id))?.videosCount || 0)
+      );
+    }, 0);
+
+    const totalQuizQuestions = internships.reduce((sum, item) => {
+      return sum + (contentSummaryMap.get(String(item._id))?.quizCount || 0);
+    }, 0);
 
     const recentUsersPurchaseCounts = await Purchase.aggregate([
       { $match: { userId: { $in: recentUsers.map((u) => u._id) } } },
@@ -294,12 +306,9 @@ exports.getAdminOverview = async (req, res) => {
       branch: item.branch,
       category: item.category,
       isActive: item.isActive,
-      modulesCount: item.modules?.length || 0,
-      videosCount: (item.modules || []).reduce(
-        (sum, module) => sum + (module.videos?.length || 0),
-        0
-      ),
-      quizCount: item.quiz?.length || 0,
+      modulesCount: contentSummaryMap.get(String(item._id))?.modulesCount || 0,
+      videosCount: contentSummaryMap.get(String(item._id))?.videosCount || 0,
+      quizCount: contentSummaryMap.get(String(item._id))?.quizCount || 0,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }));
