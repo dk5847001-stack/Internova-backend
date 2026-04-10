@@ -7,6 +7,20 @@ const Progress = require("../models/Progress");
 const { convertGoogleDriveToPreviewUrl } = require("../utils/googleDrive");
 const { isValidObjectId } = require("../utils/validation");
 
+const INTERNSHIP_LIST_FIELDS = [
+  "_id",
+  "title",
+  "slug",
+  "branch",
+  "category",
+  "description",
+  "thumbnail",
+  "image",
+  "durations",
+  "isActive",
+  "createdAt",
+].join(" ");
+
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -168,11 +182,23 @@ const validateInternshipPayload = (payload) => {
 
 // PUBLIC LIST
 exports.getAllInternships = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
+    const queryStartedAt = Date.now();
+
+    // Listing cards only need lightweight fields, not full course content.
     const internships = await Internship.find({ isActive: true })
-      .select("-__v")
-      .sort({ _id: -1 })
+      .select(INTERNSHIP_LIST_FIELDS)
+      .sort({ createdAt: -1 })
       .lean();
+
+    const queryDurationMs = Date.now() - queryStartedAt;
+    const totalRequestMs = Date.now() - requestStartedAt;
+
+    console.log(
+      `[PERF] GET /api/internships db=${queryDurationMs}ms total=${totalRequestMs}ms count=${internships.length}`
+    );
 
     return res.status(200).json({
       success: true,
@@ -181,6 +207,9 @@ exports.getAllInternships = async (req, res) => {
     });
   } catch (error) {
     console.error("GET INTERNSHIPS ERROR:", error);
+    console.log(
+      `[PERF] GET /api/internships failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to fetch programs",

@@ -6,6 +6,28 @@ const path = require("path");
 const fs = require("fs");
 const { isValidObjectId } = require("../utils/validation");
 
+const PURCHASE_LIST_FIELDS = [
+  "_id",
+  "internshipId",
+  "paymentStatus",
+  "amount",
+  "durationLabel",
+  "selectedDurationDays",
+  "purchaseType",
+  "createdAt",
+  "razorpayPaymentId",
+  "razorpayOrderId",
+].join(" ");
+
+const PURCHASE_INTERNSHIP_FIELDS = [
+  "_id",
+  "title",
+  "branch",
+  "category",
+  "thumbnail",
+  "image",
+].join(" ");
+
 const formatDate = (date) =>
   new Date(date).toLocaleDateString("en-IN", {
     day: "2-digit",
@@ -49,7 +71,12 @@ const getPurchasePriority = (purchase) => {
 };
 
 exports.getMyPurchases = async (req, res) => {
+  const requestStartedAt = Date.now();
+
   try {
+    const queryStartedAt = Date.now();
+
+    // Keep purchase cards light by populating only the internship fields used in the dashboard.
     const rawPurchases = await Purchase.find({
       userId: req.user.id,
       $or: [
@@ -57,8 +84,12 @@ exports.getMyPurchases = async (req, res) => {
         { purchaseType: { $exists: false } },
       ],
     })
-      .populate("internshipId")
-      .sort({ createdAt: -1 });
+      .select(PURCHASE_LIST_FIELDS)
+      .populate("internshipId", PURCHASE_INTERNSHIP_FIELDS)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const queryDurationMs = Date.now() - queryStartedAt;
 
     const purchaseMap = new Map();
 
@@ -133,8 +164,16 @@ exports.getMyPurchases = async (req, res) => {
         internshipTitle: internship.title || "N/A",
         branch: internship.branch || "N/A",
         category: internship.category || "N/A",
+        thumbnail: internship.thumbnail || "",
+        image: internship.image || "",
       };
     });
+
+    const totalRequestMs = Date.now() - requestStartedAt;
+
+    console.log(
+      `[PERF] GET /api/purchases/my-purchases db=${queryDurationMs}ms total=${totalRequestMs}ms count=${enhancedPurchases.length}`
+    );
 
     return res.status(200).json({
       success: true,
@@ -143,6 +182,9 @@ exports.getMyPurchases = async (req, res) => {
     });
   } catch (error) {
     console.error("GET MY ENROLLMENTS ERROR:", error);
+    console.log(
+      `[PERF] GET /api/purchases/my-purchases failed total=${Date.now() - requestStartedAt}ms`
+    );
     return res.status(500).json({
       success: false,
       message: "Failed to fetch enrollments",

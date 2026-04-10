@@ -16,14 +16,14 @@ const { protect, adminOnly } = require("../middleware/authMiddleware");
 // Public routes
 router.get("/", getAllInternships);
 
-// Admin routes
+// Keep explicit admin routes above the dynamic :id route.
 router.get("/admin/all", protect, adminOnly, getAllInternshipsAdmin);
 router.get("/admin/stats", protect, adminOnly, getAdminInternshipStats);
 router.post("/", protect, adminOnly, createInternship);
 router.put("/:id", protect, adminOnly, updateInternship);
 router.delete("/:id", protect, adminOnly, deleteInternship);
 
-// Keep dynamic route at the end
+// Keep the dynamic detail route last so admin paths are never shadowed.
 router.get("/:id", getSingleInternship);
 
 module.exports = router;
