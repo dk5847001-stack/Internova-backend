@@ -589,7 +589,7 @@ const generatePaymentSlipPdf = async ({ res, purchase, user, internship }) => {
     .fontSize(8.2)
     .fillColor(colors.soft)
     .text(
-      "Finance Desk • Internship Programs Services • Support: internova.support@gmail.com",
+      "Finance Desk • Internship Programs Services • Support: support@internovatech.in",
       left + 58,
       footerY + 1,
       {
