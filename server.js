@@ -19,6 +19,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const internshipRegistrationRoutes = require("./routes/internshipRegistrationRoutes");
 
 const app = express();
 app.disable("x-powered-by");
@@ -157,6 +158,7 @@ app.use("/api/subscribers", subscriberRoutes);
    AI Support Agent
 ========================= */
 app.use("/api/ai", aiRoutes);
+app.use("/api/internship-registrations", internshipRegistrationRoutes);
 
 /* =========================
    404 Handler

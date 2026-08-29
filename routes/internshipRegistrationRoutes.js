@@ -1,0 +1,15 @@
+const express = require("express");
+const { createRateLimiter } = require("../middleware/rateLimit");
+const { optionalProtect, protect } = require("../middleware/authMiddleware");
+const c = require("../controllers/internshipRegistrationController");
+const router = express.Router();
+const createLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 8, message: "Too many registration attempts. Please try again later." });
+const paymentLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 20, message: "Too many payment attempts. Please try again later." });
+router.get("/options", c.getRegistrationOptions);
+router.get("/my", protect, c.getMyRegistrations);
+router.post("/", optionalProtect, createLimiter, c.createRegistration);
+router.post("/:id/create-order", optionalProtect, paymentLimiter, c.createRegistrationOrder);
+router.post("/:id/verify-payment", optionalProtect, paymentLimiter, c.verifyRegistrationPayment);
+router.post("/:id/payment-failed", optionalProtect, paymentLimiter, c.markRegistrationPaymentFailed);
+router.get("/:id", optionalProtect, c.getRegistration);
+module.exports = router;

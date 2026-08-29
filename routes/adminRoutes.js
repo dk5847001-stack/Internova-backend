@@ -14,6 +14,7 @@ const {
 } = require("../controllers/adminController");
 
 const { protect, adminOnly } = require("../middleware/authMiddleware");
+const registrationController = require("../controllers/internshipRegistrationController");
 
 /* =========================
    Overview
@@ -36,6 +37,15 @@ router.patch(
   adminOnly,
   updatePurchaseStatus
 );
+
+/* =========================
+   Internship registrations
+========================= */
+router.get("/registrations", protect, adminOnly, registrationController.getAdminRegistrations);
+router.get("/registrations/:id", protect, adminOnly, registrationController.getAdminRegistration);
+router.patch("/registrations/:id/status", protect, adminOnly, registrationController.updateAdminRegistrationStatus);
+router.get("/registration-settings", protect, adminOnly, registrationController.getAdminRegistrationSettings);
+router.patch("/registration-settings", protect, adminOnly, registrationController.updateAdminRegistrationSettings);
 
 /* =========================
    Certificates

@@ -16,9 +16,10 @@ const cleanText = (value, maxLength) =>
 
 const SUPPORT_LINKS = {
   internships: { label: "Explore Internships", href: "/internships" },
-  register: { label: "Register", href: "/register" },
+  register: { label: "Open Internship Registration", href: "/#internship-registration" },
   login: { label: "Log in", href: "/login" },
   purchases: { label: "My Purchases", href: "/my-purchases" },
+  registrations: { label: "My Registrations", href: "/my-registrations" },
   verify: { label: "Verify Certificate", href: "/verify" },
   contact: { label: "Contact Support", href: "/contact" },
   refund: { label: "Refund Policy", href: "/refund-policy" },
@@ -30,6 +31,7 @@ const SUPPORT_LINKS = {
 const getRelevantLinks = (message, isAuthenticated) => {
   const text = String(message || "").toLowerCase();
   if (/certificate/.test(text)) return [SUPPORT_LINKS.purchases, SUPPORT_LINKS.verify];
+  if (/my registration|registration status|registration id|how much did i pay/.test(text)) return isAuthenticated ? [SUPPORT_LINKS.registrations] : [SUPPORT_LINKS.login];
   if (/purchase|payment|order|offer letter|progress|course|module|video|quiz/.test(text)) {
     return isAuthenticated ? [SUPPORT_LINKS.purchases] : [SUPPORT_LINKS.login, SUPPORT_LINKS.purchases];
   }

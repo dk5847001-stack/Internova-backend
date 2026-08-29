@@ -2,6 +2,8 @@ const Internship = require("../models/Internship");
 const Purchase = require("../models/Purchase");
 const Progress = require("../models/Progress");
 const Certificate = require("../models/Certificate");
+const InternshipRegistration = require("../models/InternshipRegistration");
+const PlatformSettings = require("../models/PlatformSettings");
 
 const NVIDIA_API_URL =
   process.env.NVIDIA_API_URL ||
@@ -29,14 +31,14 @@ const LOGIN_REQUIRED =
   "I can help with that, but this information is available only after you log in. Please log in to your InternovaTech account and then I can guide you further.";
 
 const PLATFORM_TERMS = /\b(internova|internship|program|enrol|enroll|register|registration|sign[ -]?up|log[ -]?in|password|email|otp|payment|razorpay|purchase|course|module|video|progress|quiz|test|certificate|offer letter|refund|privacy|terms|contact|support|dashboard|verify|verification|fee|price|duration|account)\b/i;
-const PRIVATE_TERMS = /\b(purchased|bought|my progress|my certificate|my purchase|my course|my internship|my account|which internship did i|account details|payment status|payment details|my payment|order id|payment id)\b/i;
+const PRIVATE_TERMS = /\b(purchased|bought|my progress|my certificate|my purchase|my course|my internship|my account|which internship did i|account details|payment status|payment details|my payment|order id|payment id|my registration|registration id|how much did i pay|registration status)\b/i;
 const ATTACK_TERMS = /\b(system prompt|developer message|reveal (your |the )?(instructions|prompt)|ignore (all |previous |your )?instructions|api key|secret|access token|database credentials|connection string|environment variables?|\.env|admin credentials|bypass|jailbreak|another user(?:'s)? (?:information|data|purchase|account))\b/i;
 const OFF_TOPIC_TERMS = /\b(weather|joke|essay|relationship advice|politics|prime minister|bitcoin|crypto|quantum physics|math homework|internet search|search the internet)\b/i;
 const DYNAMIC_PUBLIC_TERMS = /\b(internships? (?:are |is )?(?:available|open)|available internships?|programs? (?:are |is )?(?:available|open)|fee|price|duration|category|branch|module count|video count)\b/i;
 
 const systemPrompt = `You are InternovaTech AI Support Assistant, the official support assistant for InternovaTech.
 
-Your sole purpose is to help with InternovaTech and its verified platform features: internships, registration and email OTP verification, login/account usage, Razorpay payments and purchases, course modules/videos/progress, quizzes, offer letters, certificates and verification, policies, contact support, and website navigation.
+Your sole purpose is to help with InternovaTech and its verified platform features: internships, internship registration, email OTP verification, login/account usage, Razorpay payments and purchases, course modules/videos/progress, quizzes, offer letters, certificates and verification, policies, contact support, and website navigation.
 
 Strict safety rules:
 - Answer only InternovaTech-related requests. Decline unrelated general questions using the supplied redirect response.
@@ -65,6 +67,7 @@ const PLATFORM_KNOWLEDGE = {
   course: "Purchased programs provide module/video learning and tracked progress. The mini test unlock threshold and pass mark are program-specific live fields.",
   certificate: "A certificate is eligible only when the program enables certificates, required progress is met, the mini test is passed, and the selected duration is complete. Certificates can be publicly verified.",
   offerLetter: "A paid internship purchase has an offer-letter download flow in My Purchases.",
+  internshipRegistration: "The About Us page includes a multi-step Internship Registration form. It uses active internship records for domains and their available durations. It saves the application, opens a secure Razorpay Checkout payment, and confirms registration only after server-side payment-signature and amount verification. The form asks for basic personal, academic, internship-preference and optional profile information, not bank/card/UPI credentials.",
   support: "For information not verified in this context, guide the visitor to the Contact Support page instead of guessing.",
 };
 
@@ -117,14 +120,16 @@ async function getPublicContext(internshipId, includeInternships) {
     }
   }
 
-  if (!includeInternships) return { platformKnowledge: PLATFORM_KNOWLEDGE };
+  const registrationSettings = await PlatformSettings.findOne({ key: "platform" }).select("registrationFee currency registrationEnabled").lean();
+  const registrationContext = { currentRegistrationFee: registrationSettings?.registrationFee ?? 1799, registrationCurrency: registrationSettings?.currency || "INR", registrationEnabled: registrationSettings?.registrationEnabled !== false };
+  if (!includeInternships) return { platformKnowledge: PLATFORM_KNOWLEDGE, registrationContext };
 
   const internships = await Internship.find({ isActive: true })
     .select(selection)
     .sort({ createdAt: -1 })
     .limit(12)
     .lean();
-  return { platformKnowledge: PLATFORM_KNOWLEDGE, activeInternships: internships.map(toPublicInternship) };
+  return { platformKnowledge: PLATFORM_KNOWLEDGE, registrationContext, activeInternships: internships.map(toPublicInternship) };
 }
 
 async function getPrivateContext(userId) {
@@ -135,7 +140,8 @@ async function getPrivateContext(userId) {
     .limit(20)
     .lean();
 
-  if (!purchases.length) return { purchases: [] };
+  const registrations = await InternshipRegistration.find({ userId }).select("registrationId primaryDomain preferredDuration registrationFee currency paymentStatus registrationStatus paymentVerifiedAt createdAt").sort({ createdAt: -1 }).limit(10).lean();
+  if (!purchases.length) return { purchases: [], registrations };
   const internshipIds = purchases.map((purchase) => purchase.internshipId?._id).filter(Boolean);
   const [progresses, certificates] = await Promise.all([
     Progress.find({ userId, internshipId: { $in: internshipIds } })
@@ -149,6 +155,7 @@ async function getPrivateContext(userId) {
   const certificateByInternship = new Map(certificates.map((item) => [String(item.internshipId), item]));
 
   return {
+    registrations,
     purchases: purchases.map((purchase) => {
       const id = String(purchase.internshipId?._id || "");
       const progress = progressByInternship.get(id);
