@@ -6,6 +6,7 @@ const TestResult = require("../models/TestResult");
 const Progress = require("../models/Progress");
 const ContactMessage = require("../models/ContactMessage");
 const Subscriber = require("../models/Subscriber");
+const OfferLetter = require("../models/OfferLetter");
 const { escapeRegex, isValidObjectId } = require("../utils/validation");
 
 const toNumber = (value, fallback = 0) => {
@@ -100,6 +101,9 @@ const getPurchaseBaseData = async (purchaseDocs = []) => {
   const passedResults = await TestResult.find({ passed: true }).select(
     "userId internshipId percentage passed submittedAt"
   );
+  const offerLetters = await OfferLetter.find({
+    purchaseId: { $in: purchaseDocs.map((item) => item._id) },
+  }).select("purchaseId offerLetterId status issueDate");
 
   const progressMap = new Map(
     progressDocs.map((item) => [
@@ -120,6 +124,9 @@ const getPurchaseBaseData = async (purchaseDocs = []) => {
       `${String(item.userId)}_${String(item.internshipId)}`,
       item,
     ])
+  );
+  const offerLetterMap = new Map(
+    offerLetters.map((item) => [String(item.purchaseId), item])
   );
 
   return purchaseDocs.map((purchase) => {
@@ -168,6 +175,13 @@ const getPurchaseBaseData = async (purchaseDocs = []) => {
             certificateId: certificate.certificateId,
             issuedAt: certificate.issuedAt,
             status: certificate.status,
+          }
+        : null,
+      offerLetter: offerLetterMap.get(String(purchase._id))
+        ? {
+            offerLetterId: offerLetterMap.get(String(purchase._id)).offerLetterId,
+            status: offerLetterMap.get(String(purchase._id)).status,
+            issueDate: offerLetterMap.get(String(purchase._id)).issueDate,
           }
         : null,
       quiz: {

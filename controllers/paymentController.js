@@ -422,18 +422,17 @@ exports.downloadPaymentSlip = async (req, res) => {
 
     const purchase = await Purchase.findOne({
       _id: purchaseId,
-      userId,
       paymentStatus: { $in: PAID_STATUSES },
     }).populate("internshipId");
 
-    if (!purchase) {
+    if (!purchase || (req.user.role !== "admin" && String(purchase.userId) !== String(userId))) {
       return res.status(404).json({
         success: false,
         message: "Paid purchase not found",
       });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(purchase.userId);
     const internship = purchase.internshipId || null;
 
     return generatePaymentSlipPdf({

@@ -422,7 +422,7 @@ exports.downloadCertificate = async (req, res) => {
       });
     }
 
-    if (String(certificate.userId) !== String(userId)) {
+    if (req.user?.role !== "admin" && String(certificate.userId) !== String(userId)) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to download this certificate",
