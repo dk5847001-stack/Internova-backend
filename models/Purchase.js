@@ -71,6 +71,14 @@ const purchaseSchema = new mongoose.Schema(
       default: "created",
       index: true,
     },
+    selectionStatus: {
+      type: String,
+      enum: ["applied", "icat_qualified", "interview_scheduled", "interview_completed", "selected", "rejected"],
+      default: "applied",
+      index: true,
+    },
+    icatStatus: { type: String, enum: ["not_attempted", "qualified", "not_qualified"], default: "not_attempted" },
+    interviewStatus: { type: String, enum: ["not_scheduled", "scheduled", "completed"], default: "not_scheduled" },
   },
   { timestamps: true }
 );

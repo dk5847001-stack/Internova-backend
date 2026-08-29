@@ -15,6 +15,7 @@ const {
 
 const { protect, adminOnly } = require("../middleware/authMiddleware");
 const registrationController = require("../controllers/internshipRegistrationController");
+const offerLetterController = require("../controllers/offerLetterController");
 
 /* =========================
    Overview
@@ -46,6 +47,12 @@ router.get("/registrations/:id", protect, adminOnly, registrationController.getA
 router.patch("/registrations/:id/status", protect, adminOnly, registrationController.updateAdminRegistrationStatus);
 router.get("/registration-settings", protect, adminOnly, registrationController.getAdminRegistrationSettings);
 router.patch("/registration-settings", protect, adminOnly, registrationController.updateAdminRegistrationSettings);
+
+router.get("/offer-letters", protect, adminOnly, offerLetterController.getAdminOfferLetters);
+router.get("/offer-letter-candidates", protect, adminOnly, offerLetterController.getAdminEligibleCandidates);
+router.patch("/offer-letter-candidates/:purchaseId", protect, adminOnly, offerLetterController.updateCandidateSelection);
+router.post("/offer-letters/:purchaseId/issue", protect, adminOnly, offerLetterController.issueOfferLetter);
+router.patch("/offer-letters/:offerLetterId/revoke", protect, adminOnly, offerLetterController.revokeOfferLetter);
 
 /* =========================
    Certificates

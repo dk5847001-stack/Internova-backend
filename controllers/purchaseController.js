@@ -5,6 +5,7 @@ const PDFDocument = require("pdfkit");
 const path = require("path");
 const fs = require("fs");
 const { isValidObjectId } = require("../utils/validation");
+const OfferLetter = require("../models/OfferLetter");
 
 const PURCHASE_LIST_FIELDS = [
   "_id",
@@ -24,8 +25,6 @@ const PURCHASE_INTERNSHIP_FIELDS = [
   "title",
   "branch",
   "category",
-  "thumbnail",
-  "image",
 ].join(" ");
 
 const formatDate = (date) =>
@@ -129,6 +128,11 @@ exports.getMyPurchases = async (req, res) => {
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
 
+    const offerLetters = await OfferLetter.find({
+      userId: req.user.id,
+      purchaseId: { $in: filteredPurchases.map((item) => item._id) },
+    }).select("purchaseId offerLetterId status issueDate").lean();
+    const offerLetterByPurchase = new Map(offerLetters.map((item) => [String(item.purchaseId), item]));
     const enhancedPurchases = filteredPurchases.map((purchase) => {
       const internship = purchase.internshipId || {};
       const normalizedPaymentStatus = normalizeStatus(purchase.paymentStatus);
@@ -152,10 +156,9 @@ exports.getMyPurchases = async (req, res) => {
         referenceId: `INV-${purchase._id.toString().slice(-6).toUpperCase()}`,
         razorpayPaymentId: purchase.razorpayPaymentId || "N/A",
         razorpayOrderId: purchase.razorpayOrderId || "N/A",
-        offerLetterAvailable:
-          (normalizedPaymentStatus === "paid" ||
-            normalizedPaymentStatus === "captured") &&
-          (purchase.purchaseType === "internship" || !purchase.purchaseType),
+        offerLetterAvailable: offerLetterByPurchase.get(String(purchase._id))?.status === "issued",
+        offerLetterStatus: offerLetterByPurchase.get(String(purchase._id))?.status || "not_issued",
+        offerLetterReferenceId: offerLetterByPurchase.get(String(purchase._id))?.offerLetterId || "",
         paymentSlipAvailable:
           normalizedPaymentStatus === "paid" ||
           normalizedPaymentStatus === "captured",
@@ -164,8 +167,6 @@ exports.getMyPurchases = async (req, res) => {
         internshipTitle: internship.title || "N/A",
         branch: internship.branch || "N/A",
         category: internship.category || "N/A",
-        thumbnail: internship.thumbnail || "",
-        image: internship.image || "",
       };
     });
 

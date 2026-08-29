@@ -66,7 +66,7 @@ const PLATFORM_KNOWLEDGE = {
   payment: "Internship payments are processed through Razorpay and verified server-side before a purchase is marked paid.",
   course: "Purchased programs provide module/video learning and tracked progress. The mini test unlock threshold and pass mark are program-specific live fields.",
   certificate: "A certificate is eligible only when the program enables certificates, required progress is met, the mini test is passed, and the selected duration is complete. Certificates can be publicly verified.",
-  offerLetter: "A paid internship purchase has an offer-letter download flow in My Purchases.",
+  offerLetter: "An official internship offer letter is issued only after the applicable selection workflow: iCAT qualification, online interview completion, and final selection. It is not issued because of payment. An issued letter is available in My Purchases and can be verified by its reference ID.",
   internshipRegistration: "The About Us page includes a multi-step Internship Registration form. It uses active internship records for domains and their available durations. It saves the application, opens a secure Razorpay Checkout payment, and confirms registration only after server-side payment-signature and amount verification. The form asks for basic personal, academic, internship-preference and optional profile information, not bank/card/UPI credentials.",
   support: "For information not verified in this context, guide the visitor to the Contact Support page instead of guessing.",
 };
