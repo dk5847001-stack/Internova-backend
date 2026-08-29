@@ -101,9 +101,8 @@ exports.protect = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("AUTH MIDDLEWARE ERROR:", error);
-
     if (error.name === "TokenExpiredError") {
+      console.warn("AUTH MIDDLEWARE: expired token rejected");
       return res.status(401).json({
         success: false,
         message: "Token expired, please login again",
@@ -111,11 +110,14 @@ exports.protect = async (req, res, next) => {
     }
 
     if (error.name === "JsonWebTokenError") {
+      console.warn("AUTH MIDDLEWARE: invalid token rejected");
       return res.status(401).json({
         success: false,
         message: "Invalid token",
       });
     }
+
+    console.error("AUTH MIDDLEWARE ERROR:", error.message);
 
     return res.status(401).json({
       success: false,

@@ -18,6 +18,7 @@ const certificateRoutes = require("./routes/certificateRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 
 const app = express();
 app.disable("x-powered-by");
@@ -151,6 +152,11 @@ app.use("/api/contact-messages", contactRoutes);
    Subscriber Routes
 ========================= */
 app.use("/api/subscribers", subscriberRoutes);
+
+/* =========================
+   AI Support Agent
+========================= */
+app.use("/api/ai", aiRoutes);
 
 /* =========================
    404 Handler
