@@ -43,6 +43,10 @@ const allowedOrigins = [
   "https://internova-frontend.onrender.com",
   "https://www.internovatech.in",
   "https://internovatech.in",
+
+  // Capacitor Android
+  "https://localhost",
+  "http://localhost",
 ];
 
 const addAllowedOrigins = (value = "") => {
