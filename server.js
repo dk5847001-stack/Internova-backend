@@ -49,10 +49,21 @@ const allowedOrigins = [
   "http://localhost",
 ];
 
+const normalizeOrigin = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    return new URL(raw).origin;
+  } catch (error) {
+    return "";
+  }
+};
+
 const addAllowedOrigins = (value = "") => {
   String(value || "")
     .split(",")
-    .map((item) => item.trim())
+    .map((item) => normalizeOrigin(item))
     .filter(Boolean)
     .forEach((origin) => {
       if (!allowedOrigins.includes(origin)) {
@@ -61,8 +72,19 @@ const addAllowedOrigins = (value = "") => {
     });
 };
 
+allowedOrigins.forEach((origin, index) => {
+  allowedOrigins[index] = normalizeOrigin(origin);
+});
+
 addAllowedOrigins(process.env.CLIENT_URL);
 addAllowedOrigins(process.env.FRONTEND_URL);
+addAllowedOrigins(process.env.FRONTEND_ORIGIN);
+
+const canonicalFrontendOrigin =
+  normalizeOrigin(process.env.FRONTEND_ORIGIN) ||
+  normalizeOrigin(process.env.FRONTEND_URL) ||
+  normalizeOrigin(process.env.CLIENT_URL) ||
+  "";
 
 /* =========================
    Security Middlewares
@@ -97,7 +119,7 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      return callback(new Error("CORS blocked"));
     },
     credentials: true,
   })
@@ -184,7 +206,7 @@ app.use((err, req, res, next) => {
   if (err.message && err.message.startsWith("CORS blocked")) {
     return res.status(403).json({
       success: false,
-      message: err.message,
+      message: "Origin is not allowed",
     });
   }
 
@@ -206,4 +228,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("Allowed origins:", allowedOrigins);
+  if (canonicalFrontendOrigin) {
+    console.log("Canonical frontend origin:", canonicalFrontendOrigin);
+  }
 });

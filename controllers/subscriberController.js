@@ -2,7 +2,14 @@ const Subscriber = require("../models/Subscriber");
 const { escapeRegex, isValidEmail, normalizeEmail } = require("../utils/validation");
 
 const normalizeSource = (source = "") => {
-  const cleaned = typeof source === "string" ? source.trim().toLowerCase() : "";
+  const cleaned =
+    typeof source === "string"
+      ? source
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, "")
+          .slice(0, 40)
+      : "";
   return cleaned || "footer";
 };
 
