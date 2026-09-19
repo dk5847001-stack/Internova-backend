@@ -51,10 +51,10 @@ const resolveUserIdForMessage = async ({ explicitUserId, email }) => {
 ========================= */
 exports.createContactMessage = async (req, res) => {
   try {
-    const name = normalizeText(req.body?.name);
+    const name = normalizeText(req.body?.name, { maxLength: 80 });
     const email = normalizeEmail(req.body?.email);
-    const subject = normalizeText(req.body?.subject);
-    const message = normalizeText(req.body?.message);
+    const subject = normalizeText(req.body?.subject, { maxLength: 140 });
+    const message = normalizeText(req.body?.message, { maxLength: 2000 });
 
     if (!name || !email || !subject || !message) {
       return res.status(400).json({
@@ -67,6 +67,13 @@ exports.createContactMessage = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid email address",
+      });
+    }
+
+    if (name.length < 2 || subject.length < 4 || message.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter complete contact details and a meaningful message",
       });
     }
 
@@ -143,7 +150,7 @@ exports.getMyContactMessages = async (req, res) => {
 exports.replyToContactMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
-    const replyMessage = normalizeText(req.body?.message);
+    const replyMessage = normalizeText(req.body?.message, { maxLength: 2000 });
     const userEmail = normalizeEmail(req.user?.email || "");
 
     if (!isValidObjectId(messageId)) {

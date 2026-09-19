@@ -6,6 +6,8 @@ const {
   getAllInternshipsAdmin,
   getAdminInternshipStats,
   getSingleInternship,
+  getPublicInternshipBySlug,
+  getInternshipsSitemap,
   createInternship,
   updateInternship,
   deleteInternship,
@@ -15,6 +17,8 @@ const { protect, adminOnly } = require("../middleware/authMiddleware");
 
 // Public routes
 router.get("/", getAllInternships);
+router.get("/sitemap.xml", getInternshipsSitemap);
+router.get("/slug/:slug", getPublicInternshipBySlug);
 
 // Keep explicit admin routes above the dynamic :id route.
 router.get("/admin/all", protect, adminOnly, getAllInternshipsAdmin);
